@@ -8,7 +8,7 @@ ESX = nil
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
 -- ─── Config ───────────────────────────────────────────────
-local MAX_WEIGHT = 40 -- kg
+local MAX_WEIGHT = 1000 -- kg
 
 -- ─── Weight Helpers ───────────────────────────────────────
 
@@ -54,40 +54,157 @@ function CanCarryWeight(xPlayer, additionalWeight)
     return (current + additionalWeight) <= MAX_WEIGHT
 end
 
+-- ─── DB & Persistence ───────────────────────────────────────
+local playerCustomData = {}
+
+RegisterNetEvent('esx:playerLoaded')
+AddEventHandler('esx:playerLoaded', function(playerId, xPlayer, isNew)
+    MySQL.query('SELECT container, shortkeys FROM user_inventory_custom WHERE identifier = ?', {xPlayer.identifier}, function(result)
+        local container = {}
+        local shortkeys = {}
+        if result and result[1] then
+            container = json.decode(result[1].container) or {}
+            shortkeys = json.decode(result[1].shortkeys) or {}
+        else
+            MySQL.insert('INSERT INTO user_inventory_custom (identifier, container, shortkeys) VALUES (?, ?, ?)', {xPlayer.identifier, '[]', '[]'})
+        end
+        playerCustomData[xPlayer.identifier] = { container = container, shortkeys = shortkeys }
+        TriggerClientEvent('esx_inventory:loadCustomData', playerId, container, shortkeys)
+    end)
+end)
+
+AddEventHandler('esx:playerDropped', function(playerId)
+    local xPlayer = ESX.GetPlayerFromId(playerId)
+    if xPlayer and playerCustomData[xPlayer.identifier] then
+        MySQL.update('UPDATE user_inventory_custom SET container = ?, shortkeys = ? WHERE identifier = ?', {
+            json.encode(playerCustomData[xPlayer.identifier].container),
+            json.encode(playerCustomData[xPlayer.identifier].shortkeys),
+            xPlayer.identifier
+        })
+        playerCustomData[xPlayer.identifier] = nil
+    end
+end)
+
 -- ─── Server Callbacks ─────────────────────────────────────
 
 -- Move item between zones
-ESX.RegisterServerCallback('esx_inventory:moveItem', function(source, cb, fromZone, toZone, fromSlot, toSlot)
+ESX.RegisterServerCallback('esx_inventory:moveItem', function(source, cb, fromZone, toZone, itemName, count)
     local xPlayer = ESX.GetPlayerFromId(source)
 
-    if not xPlayer then
+    if not xPlayer or not playerCustomData[xPlayer.identifier] then
         cb(false)
         return
     end
 
-    -- For now, movements within the same player inventory are always valid
-    -- Cross-container movements would need additional logic
+    local customData = playerCustomData[xPlayer.identifier]
+    count = count or 1 -- Default to 1 if not provided
+
     if fromZone == 'bag' and toZone == 'bag' then
-        -- Internal reorder – always valid
         cb(true)
         return
     end
 
     if fromZone == 'container' and toZone == 'bag' then
-        -- Moving from container to bag – check weight
-        -- In a full implementation, you'd track container contents separately
-        cb(true)
+        if not itemName then cb(true) return end
+        
+        -- Check if it's in container
+        local found = false
+        for i, item in ipairs(customData.container) do
+            if item.name == itemName and item.count >= count then
+                item.count = item.count - count
+                if item.count <= 0 then
+                    table.remove(customData.container, i)
+                end
+                found = true
+                break
+            end
+        end
+
+        if found then
+            if CanCarryWeight(xPlayer, GetItemWeight(itemName) * count) then
+                xPlayer.addInventoryItem(itemName, count)
+                MySQL.update('UPDATE user_inventory_custom SET container = ? WHERE identifier = ?', {json.encode(customData.container), xPlayer.identifier})
+                cb(true)
+            else
+                -- Revert if cannot carry
+                local reverted = false
+                for _, cItem in ipairs(customData.container) do
+                    if cItem.name == itemName then
+                        cItem.count = cItem.count + count
+                        reverted = true
+                        break
+                    end
+                end
+                if not reverted then
+                    table.insert(customData.container, {name = itemName, count = count, label = itemName, weight = GetItemWeight(itemName)})
+                end
+                xPlayer.showNotification('~r~Cannot carry this much weight!')
+                cb(false)
+            end
+        else
+            cb(false)
+        end
         return
     end
 
     if fromZone == 'bag' and toZone == 'container' then
-        -- Moving from bag to container
-        cb(true)
+        if not itemName then cb(true) return end
+        
+        local item = xPlayer.getInventoryItem(itemName)
+        if item and item.count >= count then
+            xPlayer.removeInventoryItem(itemName, count)
+            
+            -- Add to container
+            local found = false
+            for _, cItem in ipairs(customData.container) do
+                if cItem.name == itemName then
+                    cItem.count = cItem.count + count
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                table.insert(customData.container, {
+                    name = itemName,
+                    label = item.label,
+                    count = count,
+                    weight = GetItemWeight(itemName)
+                })
+            end
+            
+            MySQL.update('UPDATE user_inventory_custom SET container = ? WHERE identifier = ?', {json.encode(customData.container), xPlayer.identifier})
+            cb(true)
+        else
+            cb(false)
+        end
         return
     end
 
     -- Default: allow
     cb(true)
+end)
+
+-- Set shortkey
+RegisterNetEvent('esx_inventory:setShortkey')
+AddEventHandler('esx_inventory:setShortkey', function(slot, itemName)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if xPlayer and playerCustomData[xPlayer.identifier] then
+        -- Guarantee array size 6
+        local shortkeys = playerCustomData[xPlayer.identifier].shortkeys
+        while #shortkeys < 6 do
+            table.insert(shortkeys, false)
+        end
+        
+        -- Store the item name or false if null
+        -- Note: client slot is 0-indexed (0 to 5), Lua is 1-indexed (1 to 6)
+        if itemName == nil then
+            shortkeys[slot + 1] = false
+        else
+            shortkeys[slot + 1] = itemName
+        end
+        
+        MySQL.update('UPDATE user_inventory_custom SET shortkeys = ? WHERE identifier = ?', {json.encode(shortkeys), xPlayer.identifier})
+    end
 end)
 
 -- Use item

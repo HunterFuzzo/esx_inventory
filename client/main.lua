@@ -14,6 +14,16 @@ Citizen.CreateThread(function()
     end
 end)
 
+local CustomContainer = {}
+local CustomShortkeys = {}
+
+-- Receive data from server on load
+RegisterNetEvent('esx_inventory:loadCustomData')
+AddEventHandler('esx_inventory:loadCustomData', function(container, shortkeys)
+    CustomContainer = container or {}
+    CustomShortkeys = shortkeys or {}
+end)
+
 -- ─── Open Inventory ───────────────────────────────────────
 function OpenInventory()
     if isOpen then return end
@@ -41,8 +51,9 @@ function OpenInventory()
     SendNUIMessage({
         action = 'openInventory',
         inventory = inventory,
-        container = {},
-        maxWeight = 40,
+        container = CustomContainer,
+        shortkeys = CustomShortkeys,
+        maxWeight = 1000,
         playerName = GetPlayerName(PlayerId()),
         playerId = GetPlayerServerId(PlayerId())
     })
@@ -101,8 +112,12 @@ end)
 
 -- Move item between zones
 RegisterNUICallback('moveItem', function(data, cb)
-    ESX.TriggerServerCallback('esx_inventory:moveItem', function(success)
+    ESX.TriggerServerCallback('esx_inventory:moveItem', function(success, updatedContainer)
         if success then
+            if updatedContainer then 
+                CustomContainer = updatedContainer 
+            end
+            
             -- Refresh inventory display
             local playerData = ESX.GetPlayerData()
             local inventory = {}
@@ -117,20 +132,21 @@ RegisterNUICallback('moveItem', function(data, cb)
                     })
                 end
             end
+            
             SendNUIMessage({
                 action = 'updateInventory',
-                inventory = inventory
+                inventory = inventory,
+                container = CustomContainer
             })
         end
         cb({ success = success })
-    end, data.fromZone, data.toZone, data.fromSlot, data.toSlot)
+    end, data.fromZone, data.toZone, data.item, data.count)
 end)
 
 -- Use item
 RegisterNUICallback('useItem', function(data, cb)
     ESX.TriggerServerCallback('esx_inventory:useItem', function(success)
         if success then
-            -- Refresh
             TriggerEvent('esx:onPlayerData', ESX.GetPlayerData())
         end
         cb({ success = success })
@@ -141,7 +157,6 @@ end)
 RegisterNUICallback('dropItem', function(data, cb)
     ESX.TriggerServerCallback('esx_inventory:dropItem', function(success)
         if success then
-            -- Refresh after drop
             local playerData = ESX.GetPlayerData()
             local inventory = {}
             for _, item in ipairs(playerData.inventory) do
@@ -173,7 +188,14 @@ end)
 
 -- Set shortkey
 RegisterNUICallback('setShortkey', function(data, cb)
-    -- Store shortkey locally
+    -- data is { slot: Number, item: String|null }
+    if data.item == nil then
+        CustomShortkeys[data.slot + 1] = false
+    else
+        CustomShortkeys[data.slot + 1] = data.item
+    end
+    
+    TriggerServerEvent('esx_inventory:setShortkey', data.slot, data.item)
     cb('ok')
 end)
 
@@ -186,10 +208,12 @@ Citizen.CreateThread(function()
             -- Keys 1-5 for shortkeys
             for i = 1, 5 do
                 if IsControlJustReleased(0, 156 + i) then -- Keys 1-5
-                    SendNUIMessage({
-                        action = 'useShortkey',
-                        slot = i - 1
-                    })
+                    local itemName = CustomShortkeys[i]
+                    if itemName and type(itemName) == 'string' then
+                        ESX.TriggerServerCallback('esx_inventory:useItem', function(success)
+                            -- Successfully used item
+                        end, itemName, i - 1)
+                    end
                 end
             end
         end

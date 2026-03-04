@@ -6,7 +6,8 @@ description 'GLife Extinction Style Inventory for ESX Legacy'
 version '1.0.0'
 
 shared_scripts {
-    '@es_extended/imports.lua'
+    '@es_extended/imports.lua',
+    '@oxmysql/lib/MySQL.lua'
 }
 
 client_scripts {

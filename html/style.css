@@ -195,13 +195,12 @@ body {
     min-height: 0;
 }
 
-/* PROTECTED CONTAINER = single row */
+/* PROTECTED CONTAINER = two rows */
 #section-container .item-grid {
     display: flex;
     gap: 4px;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
+    flex-wrap: wrap;
+    overflow: hidden;
 }
 
 #section-container .item-slot {
@@ -306,7 +305,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 4px 6px 3px;
+    padding: 6px 15px 10px;
     cursor: grab;
     transition: border-color var(--transition), background var(--transition);
     overflow: hidden;
@@ -317,7 +316,6 @@ body {
     background: var(--bg-slot-hover);
 }
 
-.item-slot.selected,
 .item-slot.active {
     border-color: var(--red);
     box-shadow: 0 0 0 1px var(--red);
@@ -328,6 +326,13 @@ body {
     border: none;
     pointer-events: none;
     cursor: default;
+}
+
+/* Container empty slots: invisible but still droppable */
+#section-container .item-slot.empty {
+    background: transparent;
+    border: 1px solid transparent;
+    pointer-events: auto;
 }
 
 .item-slot.sortable-ghost,
@@ -349,8 +354,8 @@ body {
 .item-slot.sortable-drag {
     opacity: 1 !important;
     background: rgba(20, 20, 20, 0.9);
-    border: 1px solid var(--red);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--red);
+    border: 1px solid #444;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
     transform: scale(1.05);
     z-index: 9999;
 }
@@ -424,6 +429,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    padding: 0 5px 8px;
     cursor: pointer;
     transition: border-color var(--transition), background var(--transition);
     overflow: hidden;
@@ -432,6 +438,12 @@ body {
 .shortkey-slot:hover {
     border-color: #333;
     background: var(--bg-slot-hover);
+}
+
+.shortkey-slot.ghost-item:hover {
+    border-color: var(--border-slot);
+    background: var(--bg-slot);
+    cursor: default;
 }
 
 .shortkey-slot.has-item {

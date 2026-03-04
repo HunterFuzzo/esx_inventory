@@ -12,7 +12,7 @@
         bagItems: [],
         containerItems: [],
         shortkeyItems: [null, null, null, null, null, null],
-        maxWeight: 40,
+        maxWeight: 1000,
         containerMaxWeight: 15,
         selectedSlot: null,
         contextTarget: null,
@@ -51,42 +51,35 @@
     const MOCK_ITEMS = [
         // 🔫 Weapons
         { name: 'awp', label: 'AWP', count: 1, weight: 6.0, description: 'High-power sniper rifle.' },
-        { name: 'awp_mk2', label: 'AWP MK2', count: 1, weight: 6.5, description: 'Upgraded high-power sniper rifle.' },
+        { name: 'awp_mk2', label: 'AWP MK2', count: 1, weight: 0.5, description: 'Upgraded high-power sniper rifle.' },
         { name: 'carbine', label: 'Carbine', count: 1, weight: 3.5, description: 'Standard assault rifle.' },
-        { name: 'carbine_mk2', label: 'Carbine MK2', count: 1, weight: 3.8, description: 'Upgraded assault rifle.' },
-        { name: 'ak47', label: 'AK-47', count: 1, weight: 4.3, description: 'Reliable assault rifle.' },
-        { name: 'm4a1', label: 'M4A1', count: 1, weight: 3.6, description: 'Versatile assault rifle.' },
-        { name: 'famas', label: 'Famas', count: 1, weight: 3.7, description: 'Bullpup assault rifle.' },
-        { name: 'scar', label: 'SCAR', count: 1, weight: 4.0, description: 'Heavy assault rifle.' },
-        { name: 'sniper', label: 'Sniper Rifle', count: 1, weight: 5.5, description: 'Long-range precision rifle.' },
-        { name: 'sniper_mk2', label: 'Sniper Rifle MK2', count: 1, weight: 5.8, description: 'Upgraded precision rifle.' },
-        { name: 'smg', label: 'SMG', count: 1, weight: 2.5, description: 'Submachine gun.' },
-        { name: 'smg_mk2', label: 'SMG MK2', count: 1, weight: 2.8, description: 'Upgraded submachine gun.' },
-        { name: 'micro_smg', label: 'Micro SMG', count: 1, weight: 1.5, description: 'Compact submachine gun.' },
-        { name: 'pistol', label: 'Pistol', count: 1, weight: 1.0, description: 'Standard handgun.' },
-        { name: 'pistol_mk2', label: 'Pistol MK2', count: 1, weight: 1.2, description: 'Upgraded handgun.' },
-        { name: 'desert_eagle', label: 'Desert Eagle', count: 1, weight: 2.0, description: 'High-caliber handgun.' },
-        { name: 'revolver', label: 'Revolver', count: 1, weight: 1.8, description: 'Heavy six-shooter.' },
-        { name: 'shotgun', label: 'Shotgun', count: 1, weight: 4.0, description: 'Pump-action shotgun.' },
-        { name: 'shotgun_mk2', label: 'Shotgun MK2', count: 1, weight: 4.5, description: 'Upgraded shotgun.' },
-        { name: 'machine_gun', label: 'Machine Gun', count: 1, weight: 8.0, description: 'Heavy machine gun.' },
+        // { name: 'carbine_mk2', label: 'Carbine MK2', count: 1, weight: 3.8, description: 'Upgraded assault rifle.' },
+        // { name: 'ak47', label: 'AK-47', count: 1, weight: 4.3, description: 'Reliable assault rifle.' },
+        // { name: 'm4a1', label: 'M4A1', count: 1, weight: 3.6, description: 'Versatile assault rifle.' },
+        // { name: 'famas', label: 'Famas', count: 1, weight: 3.7, description: 'Bullpup assault rifle.' },
+        // { name: 'scar', label: 'SCAR', count: 1, weight: 4.0, description: 'Heavy assault rifle.' },
+        // { name: 'sniper', label: 'Sniper Rifle', count: 1, weight: 5.5, description: 'Long-range precision rifle.' },
+        // { name: 'sniper_mk2', label: 'Sniper Rifle MK2', count: 1, weight: 5.8, description: 'Upgraded precision rifle.' },
+        // { name: 'smg', label: 'SMG', count: 1, weight: 2.5, description: 'Submachine gun.' },
+        // { name: 'smg_mk2', label: 'SMG MK2', count: 1, weight: 2.8, description: 'Upgraded submachine gun.' },
+        // { name: 'micro_smg', label: 'Micro SMG', count: 1, weight: 1.5, description: 'Compact submachine gun.' },
+        // { name: 'pistol', label: 'Pistol', count: 1, weight: 1.0, description: 'Standard handgun.' },
+        // { name: 'pistol_mk2', label: 'Pistol MK2', count: 1, weight: 1.2, description: 'Upgraded handgun.' },
+        // { name: 'desert_eagle', label: 'Desert Eagle', count: 1, weight: 2.0, description: 'High-caliber handgun.' },
+        // { name: 'revolver', label: 'Revolver', count: 1, weight: 1.8, description: 'Heavy six-shooter.' },
+        // { name: 'shotgun', label: 'Shotgun', count: 1, weight: 4.0, description: 'Pump-action shotgun.' },
+        // { name: 'shotgun_mk2', label: 'Shotgun MK2', count: 1, weight: 4.5, description: 'Upgraded shotgun.' },
+        // { name: 'machine_gun', label: 'Machine Gun', count: 1, weight: 8.0, description: 'Heavy machine gun.' },
 
-        // 🛡️ Utilities
-        { name: 'bandage', label: 'Bandage', count: 10, weight: 0.1, description: 'Heals minor injuries.' },
-        { name: 'medkit', label: 'Medkit', count: 3, weight: 1.0, description: 'Restores full health.' },
-        { name: 'kevlar', label: 'Kevlar', count: 1, weight: 2.0, description: 'Standard body armor.' },
-        { name: 'heavy_kevlar', label: 'Heavy Kevlar', count: 1, weight: 5.0, description: 'Heavy body armor.' },
         { name: 'green_syringe', label: 'Green Syringe', count: 5, weight: 0.1, description: 'Medical stimulant.' },
         { name: 'red_syringe', label: 'Red Syringe', count: 5, weight: 0.1, description: 'Combat stimulant.' },
-        { name: 'blue_syringe', label: 'Blue Syringe', count: 5, weight: 0.1, description: 'Stamina boost.' },
-        { name: 'painkillers', label: 'Painkillers', count: 10, weight: 0.1, description: 'Temporarily numbs pain.' },
-        { name: 'adrenaline', label: 'Adrenaline', count: 2, weight: 0.2, description: 'Epinephrine auto-injector.' }
+        { name: 'blue_syringe', label: 'Blue Syringe', count: 5, weight: 0.1, description: 'Stamina boost.' }
     ];
 
     const MOCK_CONTAINER = [
-        { name: 'money_bag', label: 'Money Bag', count: 1, weight: 3.0, description: 'A bag full of cash.' },
-        { name: 'gold_bar', label: 'Gold Bar', count: 2, weight: 5.0, description: 'Pure gold bar, very valuable.' },
-        { name: 'diamond', label: 'Diamond', count: 3, weight: 0.1, description: 'A sparkling diamond.' },
+        { name: 'bandage', label: 'Bandage', count: 10, weight: 0.1, description: 'Heals minor injuries.' },
+        { name: 'medkit', label: 'Medkit', count: 3, weight: 1.0, description: 'Restores full health.' },
+        { name: 'kevlar', label: 'Kevlar', count: 1, weight: 2.0, description: 'Standard body armor.' },
     ];
 
     // ─── NUI Communication ────────────────────────────────────
@@ -208,7 +201,7 @@
                 showContextMenu(e, item, zone, index);
             });
 
-            // Click to select or quick move
+            // Click to quick move (repeat last drag action)
             slot.addEventListener('click', () => {
                 if (state.lastAction && state.lastAction.fromZone === zone) {
                     const toZone = state.lastAction.toZone;
@@ -230,12 +223,7 @@
                         postNUI('moveItem', { fromZone: 'container', toZone: 'bag', item: item.name, count: 1 });
                         renderAll();
                     }
-                    return; // Prevent normal selection click
                 }
-
-                $$('.item-slot.selected').forEach(s => s.classList.remove('selected'));
-                slot.classList.add('selected');
-                state.selectedSlot = { item, zone, index };
             });
         }
 
@@ -243,51 +231,87 @@
     }
 
     function renderBag() {
-        dom.bagGrid.innerHTML = '';
-
+        const frag = document.createDocumentFragment();
         for (let i = 0; i < state.bagItems.length; i++) {
             const item = state.bagItems[i];
             if (item) {
-                dom.bagGrid.appendChild(createItemSlot(item, 'bag', i));
+                frag.appendChild(createItemSlot(item, 'bag', i));
             }
         }
+        dom.bagGrid.replaceChildren(frag);
         updateWeightDisplay();
     }
 
     function renderContainer() {
-        dom.containerGrid.innerHTML = '';
-
-        for (let i = 0; i < state.containerItems.length; i++) {
-            const item = state.containerItems[i];
-            if (item) {
-                dom.containerGrid.appendChild(createItemSlot(item, 'container', i));
-            }
+        const frag = document.createDocumentFragment();
+        const totalSlots = 12;
+        for (let i = 0; i < totalSlots; i++) {
+            const item = state.containerItems[i] || null;
+            frag.appendChild(createItemSlot(item, 'container', i));
         }
+        dom.containerGrid.replaceChildren(frag);
     }
 
     function renderShortkeys() {
-        dom.shortkeysSlots.innerHTML = '';
+        const frag = document.createDocumentFragment();
 
         for (let i = 0; i < 6; i++) {
             const item = state.shortkeyItems[i];
+
+            // Check if shortkey item really exists in the bag (if not, it's a ghost)
+            let isGhost = false;
+            if (item) {
+                const inBag = state.bagItems.find(b => b && b.name === item.name);
+                if (!inBag) {
+                    isGhost = true;
+                }
+            }
+
             const slot = document.createElement('div');
-            slot.className = 'shortkey-slot' + (item ? ' has-item' : '');
+            // If it's a ghost, it looks empty to the user but holds the data
+            slot.className = 'shortkey-slot' + (item && !isGhost ? ' has-item' : '') + (isGhost ? ' ghost-item' : '');
             slot.dataset.zone = 'shortkey';
             slot.dataset.index = i;
 
             let inner = `<span class="shortkey-number">${i + 1}</span>`;
             if (item) {
                 slot.dataset.itemName = item.name;
-                inner += `
-                    <img class="item-image" src="${getItemImagePath(item.name)}" alt="${item.label}"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23616161%22 stroke-width=%221.5%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">
-                    <span class="item-name">${item.label}</span>
-                `;
+                // Only render image and label if it's NOT a ghost
+                if (!isGhost) {
+                    inner += `
+                        <img class="item-image" src="${getItemImagePath(item.name)}" alt="${item.label}"
+                             onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2232%22 height=%2232%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23616161%22 stroke-width=%221.5%22><rect x=%222%22 y=%222%22 width=%2220%22 height=%2220%22 rx=%222%22/></svg>'">
+                        <span class="item-name">${item.label}</span>
+                    `;
+                }
             }
 
             slot.innerHTML = inner;
-            dom.shortkeysSlots.appendChild(slot);
+
+            // Click shortkey item → move to container (only if NOT ghost)
+            if (item && !isGhost) {
+                slot.addEventListener('click', () => {
+                    if (!canFitItem(item.name, 'container')) return;
+
+                    const depleted = moveOneItem(item.name, state.bagItems, state.containerItems);
+                    if (depleted) {
+                        state.shortkeyItems[i] = null;
+                        postNUI('setShortkey', { slot: i, item: null });
+                    }
+                    state.lastAction = { fromZone: 'bag', toZone: 'container' };
+                    postNUI('moveItem', { fromZone: 'bag', toZone: 'container', item: item.name, count: 1 });
+                    renderAll();
+                });
+
+                // Tooltip
+                slot.addEventListener('mouseenter', (e) => showTooltip(e, item));
+                slot.addEventListener('mousemove', moveTooltip);
+                slot.addEventListener('mouseleave', hideTooltip);
+            }
+
+            frag.appendChild(slot);
         }
+        dom.shortkeysSlots.replaceChildren(frag);
     }
 
     function renderAll() {
@@ -559,14 +583,14 @@
 
                 droppedEl.remove();
 
-                if (fromZone === 'container') {
-                    return renderAll(); // NOT ALLOWED
-                }
+                // If dragged from bag OR container, we save the shortcut mapping
+                if (itemName) {
+                    const allItems = [...state.bagItems, ...state.containerItems];
+                    const found = allItems.find(i => i && i.name === itemName);
 
-                if (itemName && fromZone === 'bag') {
-                    const found = state.bagItems.find(i => i && i.name === itemName);
                     if (found) {
                         state.shortkeyItems[targetIndex] = { ...found };
+                        // We still send the NUI update so the server knows the shortcut mapping
                         postNUI('setShortkey', { slot: targetIndex, item: itemName });
                     }
                 }
@@ -623,12 +647,11 @@
 
         const newShortkeys = [null, null, null, null, null, null];
         dom.shortkeysSlots.querySelectorAll('.shortkey-slot').forEach((slot, idx) => {
-            if (slot.classList.contains('has-item') && slot.querySelector('.item-image')) {
-                const img = slot.querySelector('.item-image');
-                const alt = img.alt;
+            if (slot.dataset.itemName) {
+                const itemName = slot.dataset.itemName;
                 const allItems = [...MOCK_ITEMS, ...MOCK_CONTAINER];
-                const found = allItems.find(i => i.label === alt);
-                if (found && idx < 5) newShortkeys[idx] = { ...found };
+                const found = allItems.find(i => i.name === itemName);
+                if (found && idx < 6) newShortkeys[idx] = { ...found };
             }
         });
         state.shortkeyItems = newShortkeys;
@@ -639,8 +662,18 @@
         if (data) {
             state.bagItems = (data.inventory || []).filter(i => i && i.count > 0);
             state.containerItems = data.container || [];
-            state.maxWeight = data.maxWeight || 40;
+            state.maxWeight = data.maxWeight || 1000;
             state.containerMaxWeight = data.containerMaxWeight || 15;
+
+            if (data.shortkeys && Array.isArray(data.shortkeys)) {
+                // Shortkeys are an array of strings (item names) or false/null
+                state.shortkeyItems = data.shortkeys.map(sk => {
+                    if (!sk) return null;
+                    const allItems = [...MOCK_ITEMS, ...MOCK_CONTAINER, ...state.bagItems, ...state.containerItems];
+                    const found = allItems.find(i => i && i.name === sk);
+                    return found ? { ...found } : { name: sk, label: sk.replace(/_/g, ' '), count: 0, weight: 0 };
+                });
+            }
 
             if (data.playerName) dom.playerName.textContent = data.playerName;
             if (data.playerId) dom.playerId.textContent = 'ID: ' + data.playerId;
@@ -736,7 +769,7 @@
                 openInventory({
                     inventory: MOCK_ITEMS,
                     container: MOCK_CONTAINER,
-                    maxWeight: 40,
+                    maxWeight: 1000,
                     playerName: 'John Doe',
                     playerId: 42,
                 });
@@ -758,10 +791,54 @@
         document.body.style.minHeight = '100vh';
     }
 
-    // Expose for external use
+    // Expose for external use + test commands
     window.ESXInventory = {
         open: openInventory,
         close: closeInventory,
         state: state,
+
+        // ─── Console Test Commands ───────────────────────
+        removeAll() {
+            state.bagItems = [];
+            state.containerItems = [];
+            state.shortkeyItems = [null, null, null, null, null, null];
+            renderAll();
+            console.log('%c🗑️ All items removed', 'color: #e53935');
+        },
+
+        addItem(name, count = 1, weight = 0.5, label, description) {
+            label = label || name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            description = description || '';
+            const existing = state.bagItems.find(i => i && i.name === name);
+            if (existing) {
+                existing.count += count;
+            } else {
+                state.bagItems.push({ name, label, count, weight, description });
+            }
+            renderAll();
+            console.log(`%c✅ Added ${count}x ${label} to bag`, 'color: #43a047');
+        },
+
+        removeItem(name) {
+            const idx = state.bagItems.findIndex(i => i && i.name === name);
+            if (idx !== -1) {
+                const removed = state.bagItems.splice(idx, 1)[0];
+                // Also remove from shortkeys if present
+                state.shortkeyItems = state.shortkeyItems.map(s => (s && s.name === name) ? null : s);
+                renderAll();
+                console.log(`%c🗑️ Removed ${removed.label} from bag`, 'color: #e53935');
+            } else {
+                console.log(`%c⚠️ Item "${name}" not found in bag`, 'color: #ff9800');
+            }
+        },
+
+        listItems() {
+            console.log('%c📦 Bag Items:', 'color: #2196f3; font-weight: bold');
+            state.bagItems.forEach(i => console.log(`  ${i.name} x${i.count} (${i.weight}kg)`));
+            console.log('%c🔒 Container Items:', 'color: #9c27b0; font-weight: bold');
+            state.containerItems.forEach(i => console.log(`  ${i.name} x${i.count} (${i.weight}kg)`));
+            console.log('%c⌨️ Shortkeys:', 'color: #ff9800; font-weight: bold');
+            state.shortkeyItems.forEach((i, idx) => console.log(`  [${idx + 1}] ${i ? i.name : '(empty)'}`));
+        },
     };
 })();
