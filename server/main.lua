@@ -7,9 +7,6 @@ ESX = nil
 
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
--- ─── Config ───────────────────────────────────────────────
-local MAX_WEIGHT = 1000 -- kg
-
 -- ─── Weight Helpers ───────────────────────────────────────
 
 -- Default item weights (can be overridden by database)
@@ -51,7 +48,7 @@ end
 
 function CanCarryWeight(xPlayer, additionalWeight)
     local current = GetPlayerCurrentWeight(xPlayer)
-    return (current + additionalWeight) <= MAX_WEIGHT
+    return (current + additionalWeight) <= Config.MaxWeight
 end
 
 -- ─── DB & Persistence ───────────────────────────────────────
@@ -531,7 +528,7 @@ RegisterCommand('myweight', function(source)
     local xPlayer = ESX.GetPlayerFromId(source)
     if xPlayer then
         local w = GetPlayerCurrentWeight(xPlayer)
-        xPlayer.showNotification(('~b~Weight: %.1f / %d KG'):format(w, MAX_WEIGHT))
+        xPlayer.showNotification(('~b~Weight: %.1f / %d KG'):format(w, Config.MaxWeight))
     end
 end, false)
 
