@@ -27,7 +27,17 @@ function CanCarryWeight(xPlayer, additionalWeight)
             currentWeight = currentWeight + (GetItemWeight(item.name) * item.count)
         end
     end
-    return (currentWeight + additionalWeight) <= (Config.MaxWeight or 30.0)
+    return (currentWeight + additionalWeight) <= Config.MaxWeightBag
+end
+
+function CanContainerCarryWeight(containerItems, additionalWeight)
+    local currentWeight = 0
+    for _, item in ipairs(containerItems) do
+        -- On calcule le poids actuel de ce qu'il y a déjà dans le coffre
+        currentWeight = currentWeight + (GetItemWeight(item.name) * (item.count or 1))
+    end
+    -- LA VRAIE LIMITE EST ICI : 30.0 (doit être la même que dans ton JS)
+    return (currentWeight + additionalWeight) <= Config.MaxWeightContainer
 end
 
 -- ─── DB & Persistence (Centralisé sur table USERS) ──────────
@@ -260,6 +270,129 @@ ESX.RegisterServerCallback('az_inventory:pickupBag', function(source, cb, bagId)
             cb(false)
         end
     else
+        cb(false)
+    end
+end)
+
+ESX.RegisterServerCallback('az_inventory:useItem', function(source, cb, itemName, slot)
+    local xPlayer = ESX.GetPlayerFromId(source)
+
+    if not xPlayer then 
+        print("[az_inventory] Erreur : Joueur introuvable pour la source " .. tostring(source))
+        cb(false) 
+        return 
+    end
+
+    if unlockPlayer then unlockPlayer(source) end 
+
+    print("[az_inventory] Tentative d'utilisation de l'item : " .. tostring(itemName))
+
+    local item = xPlayer.getInventoryItem(itemName)
+    if item and item.count > 0 then
+        
+        -- --- 1. LOGIQUE VÉHICULE (AJOUTÉE) ---
+        if Config and Config.VehicleItems and Config.VehicleItems[itemName] then
+            local vehicleModel = Config.VehicleItems[itemName]
+            print("[az_inventory] Véhicule détecté ! Modèle : " .. tostring(vehicleModel))
+            
+            xPlayer.removeInventoryItem(itemName, 1)
+            TriggerClientEvent('az_inventory:spawnVehicle', source, vehicleModel)
+            
+            cb(true)
+            return
+        end
+
+        -- --- 2. LOGIQUE ARMES CUSTOM ---
+        if Config and Config.WeaponItems and Config.WeaponItems[itemName] then
+            print("[az_inventory] Arme custom détectée : " .. tostring(itemName))
+            TriggerClientEvent('az_inventory:giveWeaponToPed', source, itemName, Config.WeaponItems[itemName])
+            cb(true)
+            return
+        end
+
+        -- --- 3. LOGIQUE ARMES NATIVES ---
+        if string.sub(string.upper(itemName), 1, 7) == "WEAPON_" then
+            print("[az_inventory] Arme native détectée : " .. tostring(itemName))
+            TriggerClientEvent('az_inventory:giveWeaponToPed', source, itemName)
+            cb(true)
+            return
+        end
+
+        -- --- 4. UTILISATION ITEMS CLASSIQUES ---
+        print("[az_inventory] Utilisation d'un item standard ou consommable.")
+        if xPlayer.useItem then
+            xPlayer.useItem(itemName)
+        else
+            ESX.UseItem(source, itemName)
+        end
+        cb(true)
+    else
+        print("[az_inventory] Échec : Le joueur n'a pas l'item " .. tostring(itemName) .. " dans son inventaire.")
+        cb(false)
+    end
+end)
+
+RegisterNetEvent('az_inventory:returnVehicleItem')
+AddEventHandler('az_inventory:returnVehicleItem', function(modelName)
+    local _source = source
+    local xPlayer = ESX.GetPlayerFromId(_source)
+    if not xPlayer then return end
+
+    print("[az_inventory] Tentative de rangement du véhicule. Modèle reçu : " .. tostring(modelName))
+
+    -- On cherche l'item qui correspond à ce modèle dans la config
+    local itemToGive = nil
+    
+    if Config and Config.VehicleItems then
+        for itemName, vModel in pairs(Config.VehicleItems) do
+            if vModel == modelName or itemName == modelName then
+                itemToGive = itemName
+                break
+            end
+        end
+    end
+
+    if itemToGive then
+        print("[az_inventory] Correspondance trouvée ! Ajout de l'item : " .. itemToGive)
+        xPlayer.addInventoryItem(itemToGive, 1)
+        
+        -- On force la mise à jour visuelle pour le client
+        local updatedInventory = xPlayer.getInventory()
+        TriggerClientEvent('az_inventory:updateInventory', _source, updatedInventory)
+    else
+        print("[az_inventory] ERREUR : Le modèle " .. tostring(modelName) .. " n'est pas reconnu dans Config.VehicleItems")
+    end
+end)
+
+-- Register the Drop Item Callback
+ESX.RegisterServerCallback('az_inventory:dropItem', function(source, cb, itemName, count)
+    local xPlayer = ESX.GetPlayerFromId(source)
+
+    if not xPlayer then
+        cb(false)
+        return
+    end
+
+    -- Protection anti-spam/dupe
+    if not lockPlayer(source) then
+        cb(false)
+        return
+    end
+
+    -- On vérifie que le joueur possède bien l'item
+    local item = xPlayer.getInventoryItem(itemName)
+    if item and item.count >= count then
+        -- Suppression de l'item de l'inventaire
+        xPlayer.removeInventoryItem(itemName, count)
+        
+        -- Log console pour le suivi
+        print(('[az_inventory] %s a jeté %dx %s'):format(xPlayer.getName(), count, itemName))
+        
+        unlockPlayer(source)
+        cb(true)
+    else
+        print(('[az_inventory] %s a tenté de jeter %s mais ne l\'a pas'):format(xPlayer.getName(), itemName))
+        unlockPlayer(source)
         cb(false)
     end
 end)

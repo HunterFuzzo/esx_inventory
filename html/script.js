@@ -13,7 +13,7 @@
         containerItems: [],
         shortkeyItems: [null, null, null, null, null, null],
         maxWeight: 1000,
-        containerMaxWeight: 30,
+        containerMaxWeight: 50,
         selectedSlot: null,
         contextTarget: null,
         lastAction: null,
@@ -579,7 +579,7 @@
                 };
 
                 document.addEventListener('mousemove', _globalMouseHandler);
-            }, 150); // 150ms delay
+            }, 0); // 150ms delay
         });
 
         // Si on relâche la souris avant les 150ms, c'est un clic normal, on annule le drag
@@ -669,8 +669,8 @@
         if (data) {
             state.bagItems = (data.inventory || []).filter(i => i && i.count > 0);
             state.containerItems = data.container || [];
-            state.maxWeight = data.maxWeight || 1000;
-            state.containerMaxWeight = data.containerMaxWeight || 30;
+            state.maxWeight = data.maxWeight;
+            state.containerMaxWeight = data.containerMaxWeight || 50.0;
 
             if (data.shortkeys && Array.isArray(data.shortkeys)) {
                 // Shortkeys are an array of strings (item names) or false/null
