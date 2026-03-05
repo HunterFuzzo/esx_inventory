@@ -19,6 +19,9 @@
         lastAction: null,
     };
 
+    let _globalDragClone = null;
+    let _globalMouseHandler = null;
+
     // ─── DOM References ───────────────────────────────────────
     const $ = (sel) => document.querySelector(sel);
     const $$ = (sel) => document.querySelectorAll(sel);
@@ -321,6 +324,12 @@
         renderBag();
         renderContainer();
         renderShortkeys();
+        if (!window.__dragInited) {
+            initNativeDragAndDrop();
+            window.__dragInited = true;
+        }
+
+        // Initialize weapon previews();
     }
 
     // ─── Tooltip ──────────────────────────────────────────────
@@ -451,278 +460,208 @@
         document.querySelectorAll('.shortkey-slot.drag-over').forEach(el => el.classList.remove('drag-over'));
     }
 
-    function initSortable() {
-        if (bagSortable) bagSortable.destroy();
-        if (containerSortable) containerSortable.destroy();
+    let draggedItemInfo = null;
+    let isDragging = false;
+    let clickTimeout = null;
 
-        const sortableOpts = {
-            group: { name: 'inventory', pull: true, put: true },
-            animation: 200,
-            sort: false,
-            ghostClass: 'sortable-ghost',
-            chosenClass: 'sortable-chosen',
-            dragClass: 'sortable-drag',
-            forceFallback: true,
-            fallbackOnBody: true,
-            filter: '.empty',
+    function _cleanupGlobalDrag() {
+        isDragging = false;
+        draggedItemInfo = null;
 
-            onAdd: function (evt) {
-                const droppedEl = evt.item;
-                const itemName = droppedEl.dataset.itemName;
-                const toZone = evt.to.id === 'bag-grid' ? 'bag' : 'container';
-                let fromZone = evt.from.id === 'container-grid' ? 'container' :
-                    evt.from.id === 'shortkeys-slots' ? 'shortkeys' : 'bag';
+        if (_globalDragClone) {
+            _globalDragClone.remove();
+            _globalDragClone = null;
+        }
+        if (_globalMouseHandler) {
+            document.removeEventListener('mousemove', _globalMouseHandler);
+            _globalMouseHandler = null;
+        }
 
-                droppedEl.style.display = 'none';
+        clearDragOver();
 
-                if (!itemName || !canFitItem(itemName, toZone)) {
-                    setTimeout(() => { renderAll(); initSortable(); }, 10);
-                    return;
-                }
+        // Enlève l'effet "fantôme" sur tous les slots
+        document.querySelectorAll('.sortable-ghost').forEach(el => el.classList.remove('sortable-ghost'));
+    }
 
-                // Transfert Bag/Hotbar -> Container
-                if ((fromZone === 'bag' || fromZone === 'shortkeys') && toZone === 'container') {
-                    const depleted = moveOneItem(itemName, state.bagItems, state.containerItems);
-                    if (depleted) {
-                        const skIdx = state.shortkeyItems.findIndex(i => i && i.name === itemName);
-                        if (skIdx !== -1) {
-                            state.shortkeyItems[skIdx] = null;
-                            postNUI('setShortkey', { slot: skIdx, item: null });
+    // Créer l'image invisible UNE SEULE FOIS en dehors de la fonction pour que FiveM ait le temps de la charger
+    const emptyDragImage = new Image();
+    emptyDragImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+    function _handleGlobalDragStart(dragEl, e) {
+        const rect = dragEl.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+
+        // On utilise l'image déjà chargée, le moteur CEF ne bloquera plus le drag
+        e.dataTransfer.setDragImage(emptyDragImage, 0, 0);
+
+        _globalDragClone = dragEl.cloneNode(true);
+        _globalDragClone.className = 'global-drag-preview';
+        _globalDragClone.style.width = rect.width + 'px';
+        _globalDragClone.style.height = rect.height + 'px';
+        _globalDragClone.style.left = rect.left + 'px';
+        _globalDragClone.style.top = rect.top + 'px';
+
+        // SÉCURITÉ : Indispensable pour ne pas bloquer le drop natif
+        _globalDragClone.style.pointerEvents = 'none';
+
+        document.body.appendChild(_globalDragClone);
+
+        _globalMouseHandler = (moveEvt) => {
+            // Sécurité : CEF renvoie parfois 0,0 en fin de drag, ce qui fait téléporter l'item
+            if (_globalDragClone && moveEvt.clientX > 0) {
+                _globalDragClone.style.left = (moveEvt.clientX - offsetX) + 'px';
+                _globalDragClone.style.top = (moveEvt.clientY - offsetY) + 'px';
+            }
+        };
+        document.addEventListener('dragover', _globalMouseHandler);
+    }
+
+    function initNativeDragAndDrop() {
+        // --- 1. MOUSEDOWN (Début de l'interaction) ---
+        dom.container.addEventListener('mousedown', (e) => {
+            // Uniquement clic gauche
+            if (e.button !== 0) return;
+
+            const slot = e.target.closest('.item-slot, .shortkey-slot');
+            if (!slot || !slot.dataset.itemName) return;
+
+            // Délai court pour différencier un Drag d'un simple Clic
+            clickTimeout = setTimeout(() => {
+                isDragging = true;
+
+                draggedItemInfo = {
+                    itemName: slot.dataset.itemName,
+                    fromZone: slot.dataset.zone,
+                    fromIndex: parseInt(slot.dataset.index),
+                    element: slot
+                };
+
+                const rect = slot.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+
+                // Création de notre propre clone visuel
+                _globalDragClone = slot.cloneNode(true);
+                _globalDragClone.className = 'global-drag-preview';
+                _globalDragClone.style.width = rect.width + 'px';
+                _globalDragClone.style.height = rect.height + 'px';
+                _globalDragClone.style.left = (e.clientX - offsetX) + 'px';
+                _globalDragClone.style.top = (e.clientY - offsetY) + 'px';
+
+                // Indispensable pour que le mouseup détecte la zone en dessous
+                _globalDragClone.style.pointerEvents = 'none';
+
+                document.body.appendChild(_globalDragClone);
+
+                // Applique le style fantôme au slot d'origine
+                slot.classList.add('sortable-ghost');
+
+                // --- 2. MOUSEMOVE (Mouvement du clone) ---
+                _globalMouseHandler = (moveEvt) => {
+                    if (!isDragging || !_globalDragClone) return;
+
+                    _globalDragClone.style.left = (moveEvt.clientX - offsetX) + 'px';
+                    _globalDragClone.style.top = (moveEvt.clientY - offsetY) + 'px';
+
+                    // Cache le clone brièvement pour trouver ce qu'il y a en dessous
+                    _globalDragClone.style.display = 'none';
+                    const elemBelow = document.elementFromPoint(moveEvt.clientX, moveEvt.clientY);
+                    _globalDragClone.style.display = 'flex';
+
+                    clearDragOver();
+                    if (elemBelow) {
+                        const slotBelow = elemBelow.closest('.item-slot, .shortkey-slot');
+                        if (slotBelow && (slotBelow.dataset.zone !== draggedItemInfo.fromZone || parseInt(slotBelow.dataset.index) !== draggedItemInfo.fromIndex)) {
+                            slotBelow.classList.add('drag-over');
                         }
+                    }
+                };
+
+                document.addEventListener('mousemove', _globalMouseHandler);
+            }, 150); // 150ms delay
+        });
+
+        // Si on relâche la souris avant les 150ms, c'est un clic normal, on annule le drag
+        dom.container.addEventListener('mouseup', () => {
+            if (clickTimeout) clearTimeout(clickTimeout);
+        });
+
+        // --- 3. MOUSEUP (Le Drop) ---
+        document.addEventListener('mouseup', (e) => {
+            if (!isDragging || !draggedItemInfo) return;
+
+            if (_globalDragClone) _globalDragClone.style.display = 'none';
+            const elemBelow = document.elementFromPoint(e.clientX, e.clientY);
+
+            let targetSlot = elemBelow ? elemBelow.closest('.item-slot, .shortkey-slot') : null;
+            let toZone = null;
+            let toIndex = null;
+
+            if (targetSlot) {
+                toZone = targetSlot.dataset.zone;
+                toIndex = parseInt(targetSlot.dataset.index);
+            } else if (elemBelow) {
+                const grid = elemBelow.closest('.item-grid, .hotbar-slots');
+                if (grid) {
+                    toZone = grid.id === 'bag-grid' ? 'bag' : (grid.id === 'container-grid' ? 'container' : 'shortkey');
+                    toIndex = toZone === 'bag' ? state.bagItems.length : (toZone === 'container' ? state.containerItems.length : -1);
+                }
+            }
+
+            const fromZone = draggedItemInfo.fromZone;
+            const fromIndex = draggedItemInfo.fromIndex;
+            const itemName = draggedItemInfo.itemName;
+
+            if (!toZone || (fromZone === toZone && fromIndex === toIndex) || !canFitItem(itemName, toZone)) {
+                _cleanupGlobalDrag();
+                renderAll();
+                return;
+            }
+
+            // --- TRANSFER LOGIC ---
+            if (fromZone === toZone) {
+                if (fromZone === 'shortkey') {
+                    const targetItem = state.shortkeyItems[toIndex];
+                    state.shortkeyItems[toIndex] = state.shortkeyItems[fromIndex];
+                    state.shortkeyItems[fromIndex] = targetItem;
+                    postNUI('setShortkey', { slot: toIndex, item: state.shortkeyItems[toIndex] ? state.shortkeyItems[toIndex].name : null });
+                    postNUI('setShortkey', { slot: fromIndex, item: state.shortkeyItems[fromIndex] ? state.shortkeyItems[fromIndex].name : null });
+                } else if (fromZone === 'bag') {
+                    const item = state.bagItems.splice(fromIndex, 1)[0];
+                    state.bagItems.splice(toIndex, 0, item);
+                } else if (fromZone === 'container') {
+                    const item = state.containerItems.splice(fromIndex, 1)[0];
+                    state.containerItems.splice(toIndex, 0, item);
+                }
+            } else {
+                if ((fromZone === 'bag' || fromZone === 'shortkey') && toZone === 'container') {
+                    const depleted = moveOneItem(itemName, state.bagItems, state.containerItems);
+                    if (depleted && fromZone === 'shortkey') {
+                        state.shortkeyItems[fromIndex] = null;
+                        postNUI('setShortkey', { slot: fromIndex, item: null });
                     }
                     postNUI('moveItem', { fromZone: 'bag', toZone: 'container', item: itemName, count: 1 });
                 }
-                // Transfert Container -> Bag
                 else if (fromZone === 'container' && toZone === 'bag') {
                     moveOneItem(itemName, state.containerItems, state.bagItems);
                     postNUI('moveItem', { fromZone: 'container', toZone: 'bag', item: itemName, count: 1 });
                 }
-
-                setTimeout(() => {
-                    renderAll();
-                    initSortable();
-                }, 20);
-            },
-
-            onMove: function (evt) {
-                clearDragOver();
-
-                // Bloquer le réordonnancement (le fait que les items s'écartent)
-                // Si on bouge un item dans SA PROPRE grille, on interdit le swap.
-                if (evt.from === evt.to) {
-                    return false;
-                }
-
-                // Pour la Hotbar
-                if (evt.to.id === 'shortkeys-slots' && evt.related) {
-                    const slot = evt.related.closest('.shortkey-slot') || evt.related;
-                    if (slot && slot.classList.contains('shortkey-slot')) {
-                        slot.classList.add('drag-over');
-                    }
-                }
-            },
-
-            onEnd: function (evt) {
-                clearDragOver();
-                _cleanupHotbarDrag();
-                handleDragEnd(evt);
-            }
-        };
-
-        bagSortable = new Sortable(dom.bagGrid, sortableOpts);
-        containerSortable = new Sortable(dom.containerGrid, sortableOpts);
-        initSortableShortkeys();
-    }
-
-    // Track custom drag clone for hotbar
-    let _hotbarDragClone = null;
-    let _hotbarMouseHandler = null;
-
-    function _cleanupHotbarDrag() {
-        if (_hotbarDragClone) {
-            _hotbarDragClone.remove();
-            _hotbarDragClone = null;
-        }
-        if (_hotbarMouseHandler) {
-            document.removeEventListener('mousemove', _hotbarMouseHandler);
-            _hotbarMouseHandler = null;
-        }
-        const dummy = document.getElementById('drag-dummy-slot');
-        if (dummy) dummy.remove();
-    }
-
-    function initSortableShortkeys() {
-        if (shortkeySortable) {
-            shortkeySortable.destroy();
-            shortkeySortable = null;
-        }
-
-        shortkeySortable = new Sortable(dom.shortkeysSlots, {
-            group: { name: 'inventory', pull: true, put: true },
-            animation: 0,
-            sort: false,
-            ghostClass: 'sortable-ghost',
-            chosenClass: 'sortable-chosen',
-            dragClass: 'sortable-drag',
-            forceFallback: true,
-            filter: '.empty',
-            onStart: function (evt) {
-                const dragEl = evt.item;
-                const rect = dragEl.getBoundingClientRect();
-
-                // 1. Create our own clone and append to body
-                _hotbarDragClone = dragEl.cloneNode(true);
-                _hotbarDragClone.className = 'hotbar-drag-preview';
-                // Set fixed dimensions matching the slot
-                _hotbarDragClone.style.width = rect.width + 'px';
-                _hotbarDragClone.style.height = rect.height + 'px';
-                _hotbarDragClone.style.left = rect.left + 'px';
-                _hotbarDragClone.style.top = rect.top + 'px';
-                document.body.appendChild(_hotbarDragClone);
-
-                // 2. Follow mouse, centered on cursor
-                const halfW = rect.width / 2;
-                const halfH = rect.height / 2;
-                _hotbarMouseHandler = (e) => {
-                    if (_hotbarDragClone) {
-                        _hotbarDragClone.style.left = (e.clientX - halfW) + 'px';
-                        _hotbarDragClone.style.top = (e.clientY - halfH) + 'px';
-                    }
-                };
-                document.addEventListener('mousemove', _hotbarMouseHandler);
-
-                // 3. Hide SortableJS's fallback clone (it's mispositioned)
-                requestAnimationFrame(() => {
-                    // The fallback clone gets sortable-drag class, find and hide it
-                    const fallbacks = document.querySelectorAll('.sortable-drag');
-                    fallbacks.forEach(el => {
-                        if (el !== dragEl && el !== _hotbarDragClone) {
-                            el.style.opacity = '0';
-                            el.style.width = '0';
-                            el.style.height = '0';
-                            el.style.overflow = 'hidden';
-                        }
-                    });
-                });
-
-                // 4. Insert dummy to keep 6-column layout
-                const dummy = document.createElement('div');
-                dummy.className = 'shortkey-slot';
-                dummy.id = 'drag-dummy-slot';
-                dummy.innerHTML = `<span class="shortkey-number">${evt.oldIndex + 1}</span>`;
-                dom.shortkeysSlots.insertBefore(dummy, dom.shortkeysSlots.children[evt.oldIndex]);
-            },
-            onAdd: function (evt) {
-                const droppedEl = evt.item;
-                const itemName = droppedEl.dataset.itemName;
-                let targetIndex = evt.newIndex;
-
-                if (evt.originalEvent) {
-                    const e = evt.originalEvent;
-                    const cX = e.clientX || (e.changedTouches ? e.changedTouches[0].clientX : 0);
-                    const cY = e.clientY || (e.changedTouches ? e.changedTouches[0].clientY : 0);
-
-                    droppedEl.style.display = 'none';
-                    const elemBelow = document.elementFromPoint(cX, cY);
-
-                    if (elemBelow) {
-                        const slotBelow = elemBelow.closest('.shortkey-slot');
-                        if (slotBelow && slotBelow.id !== 'drag-dummy-slot') {
-                            targetIndex = parseInt(slotBelow.dataset.index);
-                        }
-                    }
-                }
-
-                if (targetIndex === undefined || targetIndex >= state.shortkeyItems.length) {
-                    targetIndex = evt.newIndex;
-                }
-
-                droppedEl.style.display = 'none';
-
-                if (itemName) {
+                else if (toZone === 'shortkey') {
                     const allSourceItems = [...state.bagItems, ...state.containerItems];
                     const itemData = allSourceItems.find(i => i && i.name === itemName);
-
-                    state.shortkeyItems[targetIndex] = itemData
-                        ? { ...itemData }
-                        : { name: itemName, label: itemName.replace(/_/g, ' '), count: 1, weight: 0 };
-
-                    postNUI('setShortkey', { slot: targetIndex, item: itemName });
+                    state.shortkeyItems[toIndex] = itemData ? { ...itemData } : { name: itemName, count: 1 };
+                    postNUI('setShortkey', { slot: toIndex, item: itemName });
                 }
-
-                clearDragOver();
-                _cleanupHotbarDrag();
-
-                setTimeout(() => {
-                    renderAll();
-                }, 20);
-            },
-            onMove: function (evt) {
-                clearDragOver();
-                if (evt.related) {
-                    const slot = evt.related.closest('.shortkey-slot');
-                    if (slot) slot.classList.add('drag-over');
+                else if (fromZone === 'shortkey') {
+                    state.shortkeyItems[fromIndex] = null;
+                    postNUI('setShortkey', { slot: fromIndex, item: null });
                 }
-            },
-            onEnd: function (evt) {
-                clearDragOver();
-                _cleanupHotbarDrag();
+            }
 
-                setTimeout(() => {
-                    renderAll();
-                }, 20);
-            },
-        });
-    }
-
-    function handleDragEnd(evt) {
-        // Only handle same-zone reordering
-        if (evt.from === evt.to) {
-            rebuildStateFromDOM();
-            postNUI('moveItem', {
-                fromZone: evt.from.id.replace('-grid', '').replace('-slots', ''),
-                toZone: evt.to.id.replace('-grid', '').replace('-slots', ''),
-                fromSlot: evt.oldIndex,
-                toSlot: evt.newIndex,
-            });
-        }
-
-        setTimeout(() => {
+            _cleanupGlobalDrag();
             renderAll();
-        }, 10);
-    }
-
-    function rebuildStateFromDOM() {
-        // We must preserve existing item definitions
-        const sourceItems = [...state.bagItems, ...state.containerItems];
-
-        state.bagItems = [];
-        dom.bagGrid.querySelectorAll('.item-slot').forEach(slot => {
-            if (!slot.classList.contains('empty') && slot.dataset.itemName) {
-                const itemName = slot.dataset.itemName;
-                const found = sourceItems.find(i => i && i.name === itemName);
-                if (found) state.bagItems.push({ ...found });
-            }
         });
-
-        state.containerItems = [];
-        dom.containerGrid.querySelectorAll('.item-slot').forEach(slot => {
-            if (!slot.classList.contains('empty') && slot.dataset.itemName) {
-                const itemName = slot.dataset.itemName;
-                const found = sourceItems.find(i => i && i.name === itemName);
-                if (found) state.containerItems.push({ ...found });
-            }
-        });
-
-        const newShortkeys = [null, null, null, null, null, null];
-        dom.shortkeysSlots.querySelectorAll('.shortkey-slot').forEach((slot, idx) => {
-            if (slot.dataset.itemName) {
-                const itemName = slot.dataset.itemName;
-                const found = sourceItems.find(i => i && i.name === itemName);
-                if (found && idx < 6) newShortkeys[idx] = { ...found };
-            }
-        });
-        state.shortkeyItems = newShortkeys;
     }
 
     // ─── Open / Close ─────────────────────────────────────────
@@ -750,14 +689,6 @@
         state.isOpen = true;
         dom.container.classList.remove('hidden');
         renderAll();
-
-        // FiveM CEF may not have fully established input handling right after NUI focus.
-        // We reinit SortableJS on the first mouseenter — guaranteed to be before any drag,
-        // and guaranteed to have a complete layout. The listener auto-removes after one fire.
-        dom.container.addEventListener('mouseenter', function _reinitOnFirstEnter() {
-            dom.container.removeEventListener('mouseenter', _reinitOnFirstEnter);
-            initSortable();
-        });
     }
 
     function closeInventory() {
@@ -797,9 +728,35 @@
         }
     });
 
-    // Prevent random image drags from triggering native browser "not-allowed" icon
+    // --- FORCE FIVEM A ACCEPTER LE DRAG PARTOUT ---
+
+    // 1. Autoriser le drag uniquement sur nos slots
     document.addEventListener('dragstart', (e) => {
+        if (!e.target.closest('.item-slot') && !e.target.closest('.shortkey-slot')) {
+            e.preventDefault();
+        }
+    });
+
+    // 2. EMPECHER LE ROND BARRÉ DE FIVEM (Crucial)
+    // On doit dire au document entier que le "drop" est potentiellement autorisé
+    document.addEventListener('dragover', (e) => {
         e.preventDefault();
+    });
+
+    // 3. Sécurité supplémentaire pour nettoyer si on lâche hors fenêtre
+    document.addEventListener('drop', (e) => {
+        // On ne gère le drop global que si on est en dehors de l'inventaire
+        if (!e.target.closest('#inventory-container')) {
+            e.preventDefault();
+            _cleanupGlobalDrag();
+        }
+    });
+
+    // Click outside to close context menu
+    document.addEventListener('click', (e) => {
+        if (!dom.contextMenu.contains(e.target)) {
+            hideContextMenu();
+        }
     });
 
     // Click outside to close context menu

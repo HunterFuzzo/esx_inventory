@@ -341,51 +341,6 @@ body {
     pointer-events: auto;
 }
 
-.item-slot.sortable-ghost,
-.sortable-ghost {
-    opacity: 0.1 !important;
-    border: 1px dashed rgba(255, 255, 255, 0.3) !important;
-    background: transparent !important;
-}
-
-.item-slot.sortable-chosen {
-    cursor: grabbing;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-    z-index: 100;
-}
-
-.item-slot.sortable-drag,
-.sortable-drag {
-    opacity: 1 !important;
-    background: rgba(20, 20, 20, 0.9);
-    border: 1px solid #444;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6) !important;
-    z-index: 9999 !important;
-    pointer-events: none !important;
-}
-
-.hotbar-drag-preview {
-    position: fixed !important;
-    z-index: 99999 !important;
-    pointer-events: none !important;
-    opacity: 0.85;
-    background: rgba(20, 20, 20, 0.9) !important;
-    border: 1px solid #444 !important;
-    border-radius: 3px !important;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6) !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: center !important;
-    overflow: hidden !important;
-}
-
-/* On cache le numéro de touche sur la preview pour que ce soit propre */
-.hotbar-drag-preview .shortkey-number {
-    display: none !important;
-}
-
-/* ─── Item Content ────────────────────────────────────────── */
 .item-image {
     width: 90%;
     height: 60%;
@@ -393,6 +348,7 @@ body {
     margin: auto;
     filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
     transition: transform var(--transition);
+    pointer-events: none;
 }
 
 .item-slot:hover .item-image {
@@ -405,6 +361,7 @@ body {
     justify-content: space-between;
     align-items: flex-end;
     margin-top: auto;
+    pointer-events: none;
 }
 
 .item-name {
@@ -439,14 +396,27 @@ body {
     gap: 5px;
 }
 
-.hotbar-slots .sortable-ghost {
-    display: none !important;
+/* Le clone manuel "Global" qui suit la souris (C'est lui qui fait tout le travail) */
+.global-drag-preview {
+    position: fixed !important;
+    z-index: 999999 !important;
+    /* Très haut pour passer par-dessus tout */
+    pointer-events: none !important;
+    /* CRUCIAL : laisse passer le clic pour le drop */
+    background: rgba(15, 15, 15, 0.95) !important;
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7) !important;
+    opacity: 0.9;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
 
-/* Preview du drag depuis la hotbar — donne des dimensions au clone hors du parent flex */
-.shortkey-slot.sortable-drag {
-    width: 150px !important;
-    height: 68px !important;
+/* Cache le numéro de hotbar sur le nouveau clone */
+.global-drag-preview .shortkey-number {
+    display: none !important;
 }
 
 .shortkey-slot {
@@ -650,4 +620,24 @@ body {
     .item-grid {
         grid-template-columns: repeat(3, 1fr);
     }
+}
+
+/* Empêche FiveM de focus l'image au clic, forçant le clic sur la div parente */
+.item-slot img,
+.shortkey-slot img {
+    pointer-events: none !important;
+    user-select: none !important;
+}
+
+/* FIX FIVEM : Empêche la souris de s'accrocher aux éléments internes de la case */
+.item-slot *,
+.shortkey-slot * {
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-drag: none !important;
+}
+
+/* Assure-toi que le clone global ne bloque pas la souris non plus */
+.global-drag-preview {
+    pointer-events: none !important;
 }
