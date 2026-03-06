@@ -3,20 +3,13 @@
 -- Handles NUI toggle, controls, and item actions
 -- ============================================================
 
-ESX = nil
+ESX = exports['es_extended']:getSharedObject()
 local isOpen = false
-
-Citizen.CreateThread(function()
-    while ESX == nil do
-        TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
-        Citizen.Wait(100)
-    end
-end)
 
 local CustomContainer = {}
 local CustomShortkeys = {}
+local CachedBag = {}  -- Full-data inventory from server (same format as protected container)
 local spawnedBags = {}
-local bagsOnGround = {}
 local currentWeapon = nil
 local nearbyBag = nil
 local spawnedVehicle = nil
@@ -24,43 +17,23 @@ local spawnedVehicleModel = nil
 
 function pickupBag(bagId)
     ESX.TriggerServerCallback('az_inventory:pickupBag', function(success)
-        if success then
-            ESX.ShowNotification("~g~Sac ramassé !")
-        else
-            ESX.ShowNotification("~r~Impossible de ramasser ce sac.")
-        end
     end, bagId)
 end
 
 function OpenInventory()
     if isOpen then return end
-
-    local playerData = ESX.GetPlayerData()
-    if not playerData or not playerData.inventory then return end
+    if #CachedBag == 0 and #CustomContainer == 0 then return end
 
     isOpen = true
     SetNuiFocus(true, true)
     SetNuiFocusKeepInput(true)
 
-    local inventory = {}
-    for _, item in ipairs(playerData.inventory) do
-        if item.count > 0 then
-            table.insert(inventory, {
-                name = item.name,
-                label = item.label,
-                count = item.count,
-                weight = item.weight or 0.1,
-                description = item.description or ''
-            })
-        end
-    end
-
     SendNUIMessage({
         action = 'openInventory',
-        inventory = inventory,
+        inventory = CachedBag,
         container = CustomContainer,
         shortkeys = CustomShortkeys,
-        maxWeight = 1000,
+        maxWeight = Config.MaxWeightBag,    
         playerName = GetPlayerName(PlayerId()),
         playerId = GetPlayerServerId(PlayerId())
     })
@@ -68,34 +41,13 @@ end
 
 function RefreshInventoryNUI()
     if not isOpen then return end
-    local playerData = ESX.GetPlayerData()
-    if not playerData or not playerData.inventory then return end
 
-    local inventory = {}
-    for _, item in ipairs(playerData.inventory) do
-        if item.count > 0 then
-            table.insert(inventory, {
-                name = item.name,
-                label = item.label,
-                count = item.count,
-                weight = item.weight or 0.1,
-                description = item.description or ''
-            })
-        end
-    end
-
-    SendNUIMessage({
-        action = 'updateInventory',
-        inventory = inventory,
-        container = CustomContainer
-    })
-    
     SendNUIMessage({
         action = 'openInventory',
-        inventory = inventory,
+        inventory = CachedBag,
         container = CustomContainer,
         shortkeys = CustomShortkeys,
-        maxWeight = 1000,
+        maxWeight = Config.MaxWeightBag,
         playerName = GetPlayerName(PlayerId()),
         playerId = GetPlayerServerId(PlayerId())
     })
@@ -159,9 +111,9 @@ Citizen.CreateThread(function()
                         local isCustomWeapon = (Config and Config.WeaponItems and Config.WeaponItems[itemName] ~= nil)
 
                         if isNativeWeapon or isCustomWeapon then
+                            -- Logique Armes (Ton code actuel est bon ici)
                             local weaponName = isCustomWeapon and Config.WeaponItems[itemName] or itemName
                             local weaponHash = GetHashKey(weaponName)
-
                             if currentWeapon == itemName then
                                 SetCurrentPedWeapon(playerPed, GetHashKey("WEAPON_UNARMED"), true)
                                 currentWeapon = nil
@@ -176,7 +128,11 @@ Citizen.CreateThread(function()
                                 end
                             end
                         else
-                            ESX.TriggerServerCallback('az_inventory:useItem', function(success) end, itemName, i - 1)
+                            -- --- CORRECTION POUR LES CONSOMMABLES ---
+                            -- On demande directement au serveur d'utiliser l'item du slot
+                            ESX.TriggerServerCallback('az_inventory:useItem', function(success)
+                                -- On ne fait rien de spécial ici, le serveur va trigger useConsumable
+                            end, itemName, i - 1)
                         end
                     end
                 end
@@ -196,28 +152,30 @@ Citizen.CreateThread(function()
                     spawnedVehicle = nil
                     spawnedVehicleModel = nil
                     TriggerServerEvent('az_inventory:returnVehicleItem', modelToReturn)
-                    ESX.ShowNotification('~g~Véhicule rangé dans votre inventaire !')
+                    exports['az_notify']:ShowNotification('~g~Véhicule rangé dans votre inventaire !')
 
                     Citizen.SetTimeout(500, function()
                         if isOpen then RefreshInventoryNUI() end
                     end)
                 else
-                    ESX.ShowNotification('~r~Vous êtes trop loin de votre véhicule.')
+                    exports['az_notify']:ShowNotification('~r~Vous êtes trop loin de votre véhicule.')
                 end
             end
         end
 
         -- 5. DÉTECTION DES SACS
         local playerCoords2D = vector2(playerCoords.x, playerCoords.y) 
-
+        
         for bagId, data in pairs(spawnedBags) do
             local bagCoords2D = vector2(data.coords.x, data.coords.y)
             local dist = #(playerCoords2D - bagCoords2D)
             
-            if dist < 3.0 then
+            if dist < 3.0 and not IsPedDeadOrDying(playerPed, true) then
                 sleep = 0
                 nearbyBag = bagId
-                ESX.ShowHelpNotification("Appuyez sur ~INPUT_CONTEXT~ pour ramasser le sac")
+                BeginTextCommandDisplayHelp("STRING")
+                AddTextComponentSubstringPlayerName("Appuyez sur ~INPUT_CONTEXT~ ~w~pour ramasser le sac")
+                EndTextCommandDisplayHelp(0, false, true, -1)
 
                 if IsControlJustReleased(0, 38) then 
                     pickupBag(bagId)
@@ -233,7 +191,7 @@ end)
 
 RegisterNetEvent('az_inventory:spawnBagProp')
 AddEventHandler('az_inventory:spawnBagProp', function(bagId, coords)
-    local model = `prop_paper_bag_01`
+    local model = `prop_big_bag_01`
     
     RequestModel(model)
     while not HasModelLoaded(model) do Wait(0) end
@@ -262,9 +220,17 @@ AddEventHandler('az_inventory:refreshInventoryUI', function()
 end)
 
 RegisterNetEvent('az_inventory:loadCustomData')
-AddEventHandler('az_inventory:loadCustomData', function(container, shortkeys)
+AddEventHandler('az_inventory:loadCustomData', function(container, shortkeys, fullBag)
     CustomContainer = container or {}
     CustomShortkeys = shortkeys or {}
+    CachedBag = fullBag or {}
+end)
+
+RegisterNetEvent('az_inventory:updateInventory')
+AddEventHandler('az_inventory:updateInventory', function(fullBag, protected)
+    if fullBag then CachedBag = fullBag end
+    if protected then CustomContainer = protected end
+    if isOpen then RefreshInventoryNUI() end
 end)
 
 RegisterNUICallback('closeInventory', function(data, cb)
@@ -275,7 +241,7 @@ end)
 RegisterNUICallback('moveItem', function(data, cb)
     if currentWeapon and data.item == currentWeapon and data.fromZone == 'bag' then
         TriggerEvent('az_inventory:removeWeaponFromPed', currentWeapon)
-        ESX.ShowNotification('~y~Arme déséquipée automatiquement.')
+        exports['az_notify']:ShowNotification('~y~Arme déséquipée automatiquement.')
     end
 
     ESX.TriggerServerCallback('az_inventory:moveItem', function(success, updatedContainer)
@@ -283,26 +249,7 @@ RegisterNUICallback('moveItem', function(data, cb)
             if updatedContainer then 
                 CustomContainer = updatedContainer 
             end
-            
-            local playerData = ESX.GetPlayerData()
-            local inventory = {}
-            for _, item in ipairs(playerData.inventory) do
-                if item.count > 0 then
-                    table.insert(inventory, {
-                        name = item.name,
-                        label = item.label,
-                        count = item.count,
-                        weight = item.weight or 0.1,
-                        description = item.description or ''
-                    })
-                end
-            end
-            
-            SendNUIMessage({
-                action = 'updateInventory',
-                inventory = inventory,
-                container = CustomContainer
-            })
+            -- Server sends SyncPlayerInventory which will update CachedBag via az_inventory:updateInventory
         end
         cb({ success = success })
     end, data.fromZone, data.toZone, data.item, data.count)
@@ -320,29 +267,11 @@ end)
 RegisterNUICallback('dropItem', function(data, cb)
     if currentWeapon and data.item == currentWeapon then
         TriggerEvent('az_inventory:removeWeaponFromPed', currentWeapon)
-        ESX.ShowNotification('~y~Arme déséquipée automatiquement.')
+        exports['az_notify']:ShowNotification('~y~Arme déséquipée automatiquement.')
     end
 
     ESX.TriggerServerCallback('az_inventory:dropItem', function(success)
-        if success then
-            local playerData = ESX.GetPlayerData()
-            local inventory = {}
-            for _, item in ipairs(playerData.inventory) do
-                if item.count > 0 then
-                    table.insert(inventory, {
-                        name = item.name,
-                        label = item.label,
-                        count = item.count,
-                        weight = item.weight or 0.1,
-                        description = item.description or ''
-                    })
-                end
-            end
-            SendNUIMessage({
-                action = 'updateInventory',
-                inventory = inventory
-            })
-        end
+        -- Server sends SyncPlayerInventory which will update CachedBag via az_inventory:updateInventory
         cb({ success = success })
     end, data.item, data.count)
 end)
@@ -350,7 +279,7 @@ end)
 RegisterNUICallback('giveItem', function(data, cb)
     if currentWeapon and data.item == currentWeapon then
         TriggerEvent('az_inventory:removeWeaponFromPed', currentWeapon)
-        ESX.ShowNotification('~y~Arme déséquipée automatiquement.')
+        exports['az_notify']:ShowNotification('~y~Arme déséquipée automatiquement.')
     end
 
     ESX.TriggerServerCallback('az_inventory:giveItem', function(success)
@@ -374,7 +303,7 @@ RegisterNUICallback('setShortkey', function(data, cb)
         RemoveWeaponFromPed(playerPed, weaponHash)
         
         currentWeapon = nil
-        ESX.ShowNotification('~y~Arme retirée de la main.')
+        exports['az_notify']:ShowNotification('~y~Arme retirée de la main.')
     end
 
     if data.item == nil then
@@ -419,7 +348,7 @@ end)
  RegisterNetEvent('az_inventory:spawnVehicle')
 AddEventHandler('az_inventory:spawnVehicle', function(model)
     if spawnedVehicle and DoesEntityExist(spawnedVehicle) then
-        ESX.ShowNotification('~r~Vous avez déjà un véhicule sorti !')
+        exports['az_notify']:ShowNotification('~r~Vous avez déjà un véhicule sorti !')
         return
     end
 
@@ -431,27 +360,37 @@ AddEventHandler('az_inventory:spawnVehicle', function(model)
         spawnedVehicle = vehicle
         spawnedVehicleModel = model
         TaskWarpPedIntoVehicle(playerPed, vehicle, -1)
-        ESX.ShowNotification('~g~Véhicule sorti ! Appuyez sur ~y~K ~g~pour le ranger.')
+        exports['az_notify']:ShowNotification('~g~Véhicule sorti ! Appuyez sur ~y~K ~g~pour le ranger.')
     end)
 end)
 
-RegisterNetEvent('az_inventory:spawnBagProp')
-AddEventHandler('az_inventory:spawnBagProp', function(bagId, coords)
-    local model = `prop_big_bag_01`
-    RequestModel(model)
-    while not HasModelLoaded(model) do Wait(0) end
+RegisterNetEvent('az_inventory:useConsumable')
+AddEventHandler('az_inventory:useConsumable', function(itemName)
+    local playerPed = PlayerPedId()
+    
+    local animDict = "amb@medic@standing@tendtodead@idle_a"
+    local animName = "idle_a"
+    local duration = 1000
 
-    local obj = CreateObject(model, coords.x, coords.y, coords.z - 1.0, false, false, false)
-    PlaceObjectOnGroundProperly(obj)
-    FreezeEntityPosition(obj, true)
+    exports['az_progressbars']:startUI(duration, "Applying...")
 
-    bagsOnGround[bagId] = obj
-end)
+    RequestAnimDict(animDict)
+    while not HasAnimDictLoaded(animDict) do Wait(10) end
+    
+    TaskPlayAnim(playerPed, animDict, animName, 8.0, -8.0, duration, 1, 0, false, false, false)
 
-RegisterNetEvent('az_inventory:removeBagProp')
-AddEventHandler('az_inventory:removeBagProp', function(bagId)
-    if bagsOnGround[bagId] then
-        DeleteEntity(bagsOnGround[bagId])
-        bagsOnGround[bagId] = nil
+    Wait(duration)
+
+    if string.find(itemName, "MEDKIT") or string.find(itemName, "BANDAGE") or string.find(itemName, "GREEN") or string.find(itemName, "RED") then
+        SetEntityHealth(playerPed, 200)
     end
+    
+    if string.find(itemName, "KEVLAR") or string.find(itemName, "BLUE") or string.find(itemName, "RED") then
+        SetPedArmour(playerPed, 100)
+    end
+
+    ClearPedTasks(playerPed)
+    ClearPedBloodDamage(playerPed)
+    
+    TriggerServerEvent('az_inventory:removeItemAfterUse', itemName)
 end)

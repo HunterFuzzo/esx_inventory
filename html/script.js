@@ -436,8 +436,7 @@
         hideContextMenu();
     });
 
-    // ─── SortableJS ───────────────────────────────────────────
-    let bagSortable, containerSortable, shortkeySortable;
+    // ─── Native Drag & Drop ──────────────────────────────────
 
     function getItemsFromGrid(grid) {
         const items = [];
@@ -670,7 +669,7 @@
             state.bagItems = (data.inventory || []).filter(i => i && i.count > 0);
             state.containerItems = data.container || [];
             state.maxWeight = data.maxWeight;
-            state.containerMaxWeight = data.containerMaxWeight || 50.0;
+            state.containerMaxWeight = data.containerMaxWeight || 100.0;
 
             if (data.shortkeys && Array.isArray(data.shortkeys)) {
                 // Shortkeys are an array of strings (item names) or false/null
@@ -715,7 +714,8 @@
                 break;
             case 'updateInventory':
                 state.bagItems = (data.inventory || []).filter(i => i && i.count > 0);
-                renderBag();
+                if (data.container) state.containerItems = data.container;
+                renderAll();
                 break;
         }
     });
@@ -759,12 +759,7 @@
         }
     });
 
-    // Click outside to close context menu
-    document.addEventListener('click', (e) => {
-        if (!dom.contextMenu.contains(e.target)) {
-            hideContextMenu();
-        }
-    });
+
 
     // ─── Test Mode Bootstrap ──────────────────────────────────
     if (isTestMode) {

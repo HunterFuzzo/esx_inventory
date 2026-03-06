@@ -1,8 +1,8 @@
 fx_version 'cerulean'
 game 'gta5'
 
-author 'ESX Inventory'
-description 'GLife Extinction Style Inventory for ESX Legacy'
+author 'az_inventory'
+description 'AZ Inventory – GLife Extinction Style Inventory for ESX Legacy'
 version '1.0.0'
 
 shared_scripts {

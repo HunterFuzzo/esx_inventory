@@ -2,18 +2,25 @@
 -- ESX Inventory – Server Script (Version Unifiée : Table Users)
 -- ============================================================
 
-ESX = nil
-TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+ESX = exports['es_extended']:getSharedObject()
 
 local playerCustomData = {} -- Mémoire vive : [identifier] = { container = {}, shortkeys = {} }
 local isProcessing = {}     -- Mutex anti-spam
 
 -- ─── Weight Helpers ───────────────────────────────────────
-local ItemWeights = {
-    bread          = 0.3,
-    water          = 0.5,
-    VEHICLE_DELUXO = 2.0,
-    -- Ajoute tes autres items ici...
+local ItemWeights = {} -- Populated from DB on resource start
+
+local ItemRarity = {
+    -- [NOM DE L'ITEM] = COLOR_INDEX (6: Rouge, 18: Vert, 190: Jaune, 2: Bleu, 140: Noir)
+
+    ['WEAPON_HEAVYSNIPER_MK2'] = 190,
+    ['WEAPON_GRENADALAUNCHER'] = 190,
+    ['VEHICLE_DELUXO'] = 190,
+
+    ['EQUIPMENT_KEVLAR'] = 6,
+    ['CONSUMABLE_MEDKIT'] = 2,
+    
+    ['default'] = 140 
 }
 
 function GetItemWeight(itemName)
@@ -40,11 +47,40 @@ function CanContainerCarryWeight(containerItems, additionalWeight)
     return (currentWeight + additionalWeight) <= Config.MaxWeightContainer
 end
 
--- ─── DB & Persistence (Centralisé sur table USERS) ──────────
+-- ─── Full-Data Inventory Helpers ──────────────────────────────
+-- Transforms raw ESX inventory into the same rich format as protected container
+function GetFullInventory(xPlayer)
+    local items = xPlayer.getInventory()
+    local fullInventory = {}
 
--- Chargement à la connexion
-RegisterNetEvent('esx:playerLoaded')
-AddEventHandler('esx:playerLoaded', function(source, xPlayer)
+    for _, item in ipairs(items) do
+        if item.count > 0 then
+            table.insert(fullInventory, {
+                name   = item.name,
+                label  = item.label,
+                count  = item.count,
+                weight = GetItemWeight(item.name)
+            })
+        end
+    end
+    return fullInventory
+end
+
+-- Sends both bag and protected in full-data format to the client
+function SyncPlayerInventory(source)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer or not playerCustomData[xPlayer.identifier] then return end
+
+    local fullBag = GetFullInventory(xPlayer)
+    local protected = playerCustomData[xPlayer.identifier].container
+
+    TriggerClientEvent('az_inventory:updateInventory', source, fullBag, protected)
+end
+
+-- ─── DB & Persistence (Centralisé sur table USERS) ────────────
+
+-- Shared loader — used by both esx:playerLoaded and onResourceStart
+function LoadPlayerCustomData(xPlayer, targetSource)
     MySQL.query('SELECT protected, inventory_shortkeys FROM users WHERE identifier = ?', {
         xPlayer.identifier
     }, function(result)
@@ -61,28 +97,38 @@ AddEventHandler('esx:playerLoaded', function(source, xPlayer)
             shortkeys = shortkeys
         }
 
-        TriggerClientEvent('az_inventory:loadCustomData', source, container, shortkeys)
+        local fullBag = GetFullInventory(xPlayer)
+        TriggerClientEvent('az_inventory:loadCustomData', targetSource, container, shortkeys, fullBag)
     end)
+end
+
+-- Chargement à la connexion
+RegisterNetEvent('esx:playerLoaded')
+AddEventHandler('esx:playerLoaded', function(source, xPlayer)
+    LoadPlayerCustomData(xPlayer, source)
 end)
 
 -- Initialisation au Start du script (si déjà connecté)
 AddEventHandler('onResourceStart', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
     Citizen.Wait(1000)
+
+    -- Load item weights from DB once
+    MySQL.query('SELECT name, weight FROM items', {}, function(result)
+        if result then
+            for _, row in ipairs(result) do
+                ItemWeights[row.name] = tonumber(row.weight) or 0.1
+            end
+            print(('[az_inventory] Loaded %d item weights from DB'):format(#result))
+        end
+    end)
+
+    -- Reload custom data for already-connected players
     local players = ESX.GetPlayers()
-    for i=1, #players do
+    for i = 1, #players do
         local xPlayer = ESX.GetPlayerFromId(players[i])
         if xPlayer then
-            MySQL.query('SELECT protected, inventory_shortkeys FROM users WHERE identifier = ?', {xPlayer.identifier}, function(result)
-                local container = {}
-                local shortkeys = {false, false, false, false, false, false}
-                if result and result[1] then
-                    container = json.decode(result[1].protected) or {}
-                    shortkeys = json.decode(result[1].inventory_shortkeys) or shortkeys
-                end
-                playerCustomData[xPlayer.identifier] = { container = container, shortkeys = shortkeys }
-                TriggerClientEvent('az_inventory:loadCustomData', players[i], container, shortkeys)
-            end)
+            LoadPlayerCustomData(xPlayer, players[i])
         end
     end
 end)
@@ -126,6 +172,7 @@ ESX.RegisterServerCallback('az_inventory:moveItem', function(source, cb, fromZon
 
             MySQL.update('UPDATE users SET protected = ? WHERE identifier = ?', {json.encode(customData.container), xPlayer.identifier})
             unlockPlayer(source)
+            SyncPlayerInventory(source)
             cb(true, customData.container)
         else
             unlockPlayer(source)
@@ -150,9 +197,10 @@ ESX.RegisterServerCallback('az_inventory:moveItem', function(source, cb, fromZon
                 xPlayer.addInventoryItem(itemName, count)
                 MySQL.update('UPDATE users SET protected = ? WHERE identifier = ?', {json.encode(customData.container), xPlayer.identifier})
                 unlockPlayer(source)
+                SyncPlayerInventory(source)
                 cb(true, customData.container)
             else
-                xPlayer.showNotification('~r~Ton sac est trop lourd !')
+                TriggerClientEvent('az_notify:showNotification', source, '~r~Ton sac est trop lourd !')
                 unlockPlayer(source)
                 cb(false)
             end
@@ -181,95 +229,100 @@ end)
 -- Drop, Use, Pickup Bag (Gardés tels quels mais avec lockPlayer corrigé)
 -- ... (Ici tu peux garder tes fonctions dropItem, giveItem, pickupBag que tu avais déjà)
 
--- À ajouter dans ton script d'INVENTAIRE (pas admin)
+-- Sync le client quand ESX ajoute un item au bag
 AddEventHandler('esx:onAddInventoryItem', function(source, item, count)
-    local xPlayer = ESX.GetPlayerFromId(source)
-    if xPlayer then
-        -- On prévient le menu que le sac (My Bag) a changé
-        TriggerClientEvent('az_inventory:updateInventory', source, xPlayer.getInventory())
-    end
+    SyncPlayerInventory(source)
 end)
 
--- Table pour stocker les sacs au sol côté serveur
 local groundBags = {}
 
-RegisterNetEvent('esx:onPlayerDeath')
-AddEventHandler('esx:onPlayerDeath', function(data)
-    local _source = source
+RegisterNetEvent('az_inventory:dropBagOnDeath')
+AddEventHandler('az_inventory:dropBagOnDeath', function(playerId)
+    local _source = playerId or source
     local xPlayer = ESX.GetPlayerFromId(_source)
-    if not xPlayer then return end
 
-    local coords = GetEntityCoords(GetPlayerPed(_source))
+    if not xPlayer then 
+        return 
+    end
+
+    local ped = GetPlayerPed(_source)
+    local coords = GetEntityCoords(ped)
+
     local inventory = xPlayer.getInventory()
     local itemsToDrop = {}
 
-    print(("^3[INVENTORY] Début de la procédure de mort pour %s^7"):format(xPlayer.getName()))
-
-    -- 1. On trie ce qui tombe au sol (Uniquement ce qui est dans le 'Bag' ESX)
     for i=1, #inventory do
         local item = inventory[i]
         if item and item.count > 0 then
-            -- On prépare la liste pour le sac au sol
             table.insert(itemsToDrop, {
                 name = item.name,
                 count = item.count,
                 label = item.label or item.name
             })
             
-            -- 2. On vide le sac ESX (C'est ce qui sera perdu)
+            -- Suppression de l'item
             xPlayer.removeInventoryItem(item.name, item.count)
         end
     end
 
-    -- 3. On ne touche PAS à playerCustomData[xPlayer.identifier].container (Le Protected)
-    -- Donc les items en Protected resteront sur le joueur au revive.
-
-    -- 4. Création du sac au sol si le joueur avait des choses
     if #itemsToDrop > 0 then
-        local bagId = math.random(1000, 9999)
+        local bagId = math.random(1000, 9999) .. "_" .. os.time()
+    
         groundBags[bagId] = {
             items = itemsToDrop,
             coords = coords,
             owner = xPlayer.identifier
         }
-        
-        -- On demande à tous les clients d'afficher le sac
+
         TriggerClientEvent('az_inventory:spawnBagProp', -1, bagId, coords)
-        
-        print(("^2[INVENTORY] Sac n°%s généré avec %d items au sol.^7"):format(bagId, #itemsToDrop))
-    else
-        print("^1[INVENTORY] Le joueur est mort mais n'avait rien dans son sac.^7")
+        SyncPlayerInventory(_source)
     end
 end)
 
 ESX.RegisterServerCallback('az_inventory:pickupBag', function(source, cb, bagId)
-    local xPlayer = ESX.GetPlayerFromId(source)
+    -- On fixe la source immédiatement
+    local _source = source 
+    local xPlayer = ESX.GetPlayerFromId(_source)
     local bag = groundBags[bagId]
 
-    if bag then
+    if bag and xPlayer then
+        -- Calcul du poids total du sac
         local totalWeight = 0
         for _, item in ipairs(bag.items) do
             totalWeight = totalWeight + (GetItemWeight(item.name) * item.count)
         end
 
-        -- Vérification du poids avant de ramasser
+        -- Vérification si le joueur peut porter le poids
         if CanCarryWeight(xPlayer, totalWeight) then
-            for _, item in ipairs(bag.items) do
-                xPlayer.addInventoryItem(item.name, item.count)
-                TriggerClientEvent('az_inventory:refreshInventoryUI', source)
-            end
-
-            -- On supprime le sac du serveur et des clients
+            -- 1. On supprime le sac du monde immédiatement (Sécurité Anti-Dupli)
             groundBags[bagId] = nil
             TriggerClientEvent('az_inventory:removeBagProp', -1, bagId)
-            
-            xPlayer.showNotification("~g~Vous avez récupéré le contenu du sac.")
+
+            -- 2. On distribue les items et on envoie les notifs colorées
+            for _, item in ipairs(bag.items) do
+                xPlayer.addInventoryItem(item.name, item.count)
+
+                -- On récupère la couleur dans le dictionnaire
+                local rarityColor = ItemRarity[item.name] or ItemRarity['default']
+                print(item.name, rarityColor)
+                local label = item.label or item.name
+                
+                -- Notification personnalisée par item
+                TriggerClientEvent('az_notify:showNotification', _source, "~g~" .. item.count .. "x ~s~" .. label, rarityColor)
+                
+                -- Petit délai optionnel si le joueur ramasse beaucoup d'items d'un coup
+                Citizen.Wait(100)
+            end
+
+            SyncPlayerInventory(_source)
             cb(true)
         else
-            xPlayer.showNotification("~r~Votre inventaire est trop lourd pour ramasser ce sac.")
+            -- Notification d'erreur de poids (Rouge)
+            TriggerClientEvent('az_notify:showNotification', _source, "~r~Votre inventaire est trop lourd !", 6)
             cb(false)
         end
     else
+        -- Le sac n'existe plus ou joueur non trouvé
         cb(false)
     end
 end)
@@ -283,26 +336,45 @@ ESX.RegisterServerCallback('az_inventory:useItem', function(source, cb, itemName
         return 
     end
 
-    if unlockPlayer then unlockPlayer(source) end 
-
     print("[az_inventory] Tentative d'utilisation de l'item : " .. tostring(itemName))
 
     local item = xPlayer.getInventoryItem(itemName)
     if item and item.count > 0 then
-        
-        -- --- 1. LOGIQUE VÉHICULE (AJOUTÉE) ---
+
+        -- --- 1. LOGIQUE Gilet ---
+        -- Dans ton callback az_inventory:useItem :
+        if itemName == nil then 
+            print("^1[az_inventory] ERREUR : Le client a envoyé un item vide (nil) !^7")
+            cb(false) 
+            return 
+        end
+
+        -- On s'assure que c'est bien du texte
+        local name = tostring(itemName)
+        print("[az_inventory] Tentative d'utilisation de : " .. name)
+
+        -- DETECTION DES CONSOMMABLES (Correction du string.find)
+        if string.find(name, "CONSUMABLE") or string.find(name, "EQUIPMENT") then
+            print("^2[az_inventory] Item reconnu ! Envoi vers le client.^7")
+            TriggerClientEvent('az_inventory:useConsumable', source, name)
+            cb(true)
+            return
+        end
+    
+        -- --- 2. LOGIQUE VÉHICULE (AJOUTÉE) ---
         if Config and Config.VehicleItems and Config.VehicleItems[itemName] then
             local vehicleModel = Config.VehicleItems[itemName]
             print("[az_inventory] Véhicule détecté ! Modèle : " .. tostring(vehicleModel))
             
             xPlayer.removeInventoryItem(itemName, 1)
             TriggerClientEvent('az_inventory:spawnVehicle', source, vehicleModel)
+            SyncPlayerInventory(source)
             
             cb(true)
             return
         end
 
-        -- --- 2. LOGIQUE ARMES CUSTOM ---
+        -- --- 3. LOGIQUE ARMES CUSTOM ---
         if Config and Config.WeaponItems and Config.WeaponItems[itemName] then
             print("[az_inventory] Arme custom détectée : " .. tostring(itemName))
             TriggerClientEvent('az_inventory:giveWeaponToPed', source, itemName, Config.WeaponItems[itemName])
@@ -310,7 +382,7 @@ ESX.RegisterServerCallback('az_inventory:useItem', function(source, cb, itemName
             return
         end
 
-        -- --- 3. LOGIQUE ARMES NATIVES ---
+        -- --- 4. LOGIQUE ARMES NATIVES ---
         if string.sub(string.upper(itemName), 1, 7) == "WEAPON_" then
             print("[az_inventory] Arme native détectée : " .. tostring(itemName))
             TriggerClientEvent('az_inventory:giveWeaponToPed', source, itemName)
@@ -318,7 +390,7 @@ ESX.RegisterServerCallback('az_inventory:useItem', function(source, cb, itemName
             return
         end
 
-        -- --- 4. UTILISATION ITEMS CLASSIQUES ---
+        -- --- 5. UTILISATION ITEMS CLASSIQUES ---
         print("[az_inventory] Utilisation d'un item standard ou consommable.")
         if xPlayer.useItem then
             xPlayer.useItem(itemName)
@@ -355,10 +427,7 @@ AddEventHandler('az_inventory:returnVehicleItem', function(modelName)
     if itemToGive then
         print("[az_inventory] Correspondance trouvée ! Ajout de l'item : " .. itemToGive)
         xPlayer.addInventoryItem(itemToGive, 1)
-        
-        -- On force la mise à jour visuelle pour le client
-        local updatedInventory = xPlayer.getInventory()
-        TriggerClientEvent('az_inventory:updateInventory', _source, updatedInventory)
+        SyncPlayerInventory(_source)
     else
         print("[az_inventory] ERREUR : Le modèle " .. tostring(modelName) .. " n'est pas reconnu dans Config.VehicleItems")
     end
@@ -389,10 +458,104 @@ ESX.RegisterServerCallback('az_inventory:dropItem', function(source, cb, itemNam
         print(('[az_inventory] %s a jeté %dx %s'):format(xPlayer.getName(), count, itemName))
         
         unlockPlayer(source)
+        SyncPlayerInventory(source)
         cb(true)
     else
         print(('[az_inventory] %s a tenté de jeter %s mais ne l\'a pas'):format(xPlayer.getName(), itemName))
         unlockPlayer(source)
         cb(false)
+    end
+end)
+
+-- ─── Give Item Callback ──────────────────────────────────
+ESX.RegisterServerCallback('az_inventory:giveItem', function(source, cb, itemName, count)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    if not xPlayer then cb(false) return end
+    if not lockPlayer(source) then cb(false) return end
+
+    count = count or 1
+    local item = xPlayer.getInventoryItem(itemName)
+
+    if not item or item.count < count then
+        print(('[az_inventory] %s tried to give %s but doesn\'t have enough'):format(xPlayer.getName(), itemName))
+        unlockPlayer(source)
+        cb(false)
+        return
+    end
+
+    -- Find closest player within 3.0 meters
+    local playerPed = GetPlayerPed(source)
+    local playerCoords = GetEntityCoords(playerPed)
+    local closestPlayer = nil
+    local closestDist = 3.0
+
+    local players = ESX.GetPlayers()
+    for _, playerId in ipairs(players) do
+        if playerId ~= source then
+            local targetPed = GetPlayerPed(playerId)
+            local targetCoords = GetEntityCoords(targetPed)
+            local dist = #(playerCoords - targetCoords)
+            if dist < closestDist then
+                closestDist = dist
+                closestPlayer = playerId
+            end
+        end
+    end
+
+    if not closestPlayer then
+        TriggerClientEvent('az_notify:showNotification', source, '~r~Aucun joueur à proximité.')
+        unlockPlayer(source)
+        cb(false)
+        return
+    end
+
+    local xTarget = ESX.GetPlayerFromId(closestPlayer)
+    if not xTarget then
+        unlockPlayer(source)
+        cb(false)
+        return
+    end
+
+    -- Check target can carry the weight
+    if not CanCarryWeight(xTarget, GetItemWeight(itemName) * count) then
+        TriggerClientEvent('az_notify:showNotification', source, '~r~L\'inventaire du joueur est trop lourd.')
+        unlockPlayer(source)
+        cb(false)
+        return
+    end
+
+    xPlayer.removeInventoryItem(itemName, count)
+    xTarget.addInventoryItem(itemName, count)
+
+    TriggerClientEvent('az_notify:showNotification', source, ('~g~Vous avez donné %dx %s'):format(count, item.label or itemName))
+    TriggerClientEvent('az_notify:showNotification', closestPlayer, ('~g~Vous avez reçu %dx %s'):format(count, item.label or itemName))
+
+    -- Refresh both players' UI with full data
+    SyncPlayerInventory(source)
+    SyncPlayerInventory(closestPlayer)
+
+    print(('[az_inventory] %s gave %dx %s to %s'):format(xPlayer.getName(), count, itemName, xTarget.getName()))
+    unlockPlayer(source)
+    cb(true)
+end)
+
+RegisterNetEvent('az_inventory:removeItemAfterUse')
+AddEventHandler('az_inventory:removeItemAfterUse', function(itemName)
+    local _source = source
+    local xPlayer = ESX.GetPlayerFromId(_source)
+
+    if xPlayer then
+        -- On vérifie quand même si le joueur a bien l'item avant de l'enlever
+        local item = xPlayer.getInventoryItem(itemName)
+        
+        if item and item.count > 0 then
+            xPlayer.removeInventoryItem(itemName, 1)
+            
+            -- TRÈS IMPORTANT : On rafraîchit l'inventaire pour le joueur
+            -- pour que l'item disparaisse de son écran immédiatement
+            SyncPlayerInventory(_source) 
+            
+            print(("[az_inventory] Consommable utilisé et retiré : %s pour le joueur %s"):format(itemName, xPlayer.getName()))
+        end
     end
 end)
