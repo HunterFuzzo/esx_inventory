@@ -15,6 +15,27 @@ local nearbyBag = nil
 local spawnedVehicle = nil
 local spawnedVehicleModel = nil
 
+local weaponConfig = {
+    ['AMMO_12']     = {"WEAPON_PUMPSHOTGUN", "WEAPON_SAWNOFFSHOTGUN", "WEAPON_BULLPUPSHOTGUN"},
+    ['AMMO_45']     = {"WEAPON_PISTOL", "WEAPON_COMBATPISTOL", "WEAPON_APPISTOL", "WEAPON_VINTAGEPISTOL"},
+    ['AMMO_50']     = {"WEAPON_SNIPERRIFLE", "WEAPON_HEAVYSNIPER", "WEAPON_MARKSMANRIFLE"},
+    ['AMMO_556']    = {"WEAPON_CARBINERIFLE", "WEAPON_ADVANCEDRIFLE", "WEAPON_SPECIALCARBINE"},
+    ['AMMO_762']    = {"WEAPON_ASSAULTRIFLE", "WEAPON_BULLPUPRIFLE", "WEAPON_COMBATMG"},
+    ['AMMO_ROCKET'] = {"WEAPON_RPG", "WEAPON_HOMINGLAUNCHER", "WEAPON_COMPACTLAUNCHER"}
+}
+
+local function GetPlayerCash()
+    local playerData = ESX.GetPlayerData()
+    if playerData and playerData.accounts then
+        for _, account in ipairs(playerData.accounts) do
+            if account.name == 'money' then
+                return account.money
+            end
+        end
+    end
+    return 0
+end
+
 function pickupBag(bagId)
     ESX.TriggerServerCallback('az_inventory:pickupBag', function(success)
     end, bagId)
@@ -35,7 +56,8 @@ function OpenInventory()
         shortkeys = CustomShortkeys,
         maxWeight = Config.MaxWeightBag,    
         playerName = GetPlayerName(PlayerId()),
-        playerId = GetPlayerServerId(PlayerId())
+        playerId = GetPlayerServerId(PlayerId()),
+        money = GetPlayerCash()
     })
 end
 
@@ -49,7 +71,8 @@ function RefreshInventoryNUI()
         shortkeys = CustomShortkeys,
         maxWeight = Config.MaxWeightBag,
         playerName = GetPlayerName(PlayerId()),
-        playerId = GetPlayerServerId(PlayerId())
+        playerId = GetPlayerServerId(PlayerId()),
+        money = GetPlayerCash()
     })
 end
 
@@ -241,7 +264,7 @@ end)
 RegisterNUICallback('moveItem', function(data, cb)
     if currentWeapon and data.item == currentWeapon and data.fromZone == 'bag' then
         TriggerEvent('az_inventory:removeWeaponFromPed', currentWeapon)
-        exports['az_notify']:ShowNotification('~y~Arme déséquipée automatiquement.')
+        exports['az_notify']:ShowNotification('Vous avez rangé votre arme')
     end
 
     ESX.TriggerServerCallback('az_inventory:moveItem', function(success, updatedContainer)
@@ -279,7 +302,7 @@ end)
 RegisterNUICallback('giveItem', function(data, cb)
     if currentWeapon and data.item == currentWeapon then
         TriggerEvent('az_inventory:removeWeaponFromPed', currentWeapon)
-        exports['az_notify']:ShowNotification('~y~Arme déséquipée automatiquement.')
+        exports['az_notify']:ShowNotification('Vous avez rangé votre arme')
     end
 
     ESX.TriggerServerCallback('az_inventory:giveItem', function(success)
@@ -303,7 +326,7 @@ RegisterNUICallback('setShortkey', function(data, cb)
         RemoveWeaponFromPed(playerPed, weaponHash)
         
         currentWeapon = nil
-        exports['az_notify']:ShowNotification('~y~Arme retirée de la main.')
+        exports['az_notify']:ShowNotification('Vous avez rangé votre arme')    
     end
 
     if data.item == nil then
@@ -393,4 +416,38 @@ AddEventHandler('az_inventory:useConsumable', function(itemName)
     ClearPedBloodDamage(playerPed)
     
     TriggerServerEvent('az_inventory:removeItemAfterUse', itemName)
+end)
+
+RegisterNetEvent('az_inventory:useAmmo')
+AddEventHandler('az_inventory:useAmmo', function(ammoName, count, label)
+    local ped = PlayerPedId()
+    local weaponHash = GetSelectedPedWeapon(ped)
+
+    if weaponHash ~= `WEAPON_UNARMED` then
+        local found = false
+        for _, weaponName in ipairs(weaponConfig[ammoName]) do
+            if weaponHash == GetHashKey(weaponName) then
+                found = true
+                break
+            end
+        end
+
+        if found then
+            -- Animation de rechargement (optionnel)
+            TaskReloadWeapon(ped, true)
+            
+            -- Ajout des munitions
+            AddAmmoToPed(ped, weaponHash, count)
+            
+            -- Notification de succès
+            exports['az_notify']:ShowNotification("~g~Rechargement effectué : ~s~" .. label .. " (+" .. count .. ")")
+            
+            -- On prévient le serveur de retirer l'item
+            TriggerServerEvent('az_inventory:removeAmmoItem', ammoName)
+        else
+            exports['az_notify']:ShowNotification("~r~Ces munitions ne sont pas compatibles avec cette arme.")
+        end
+    else
+        exports['az_notify']:ShowNotification("~r~Vous devez avoir une arme en main.")
+    end
 end)

@@ -112,3 +112,10 @@ INSERT IGNORE INTO items (name, label, weight, rare, can_remove) VALUES
 -- ÉQUIPEMENT
 -- ===============================
 ('EQUIPMENT_KEVLAR', 'Kevlar', 2.0, 0, 1);
+
+('AMMO_12', 'Munitions calibre 12', 1, 0, 1),
+('AMMO_45', 'Munitions calibre .45', 1, 0, 1),
+('AMMO_50', 'Munitions calibre .50', 1, 0, 1),
+('AMMO_556', 'Munitions 5.56mm', 1, 0, 1),
+('AMMO_762', 'Munitions 7.62mm', 1, 0, 1),
+('AMMO_ROCKET', 'Roquette', 5, 0, 1);

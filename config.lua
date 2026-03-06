@@ -4,7 +4,7 @@ Config = {}
 Config.MaxWeightBag = 1000.0
 
 -- Maximum weight the protected container can hold (kg)
-Config.MaxWeightContainer = 100.0
+Config.MaxWeightContainer = 200.0
 
 -- Items that spawn a vehicle when used.
 -- Key = item name in DB, Value = vehicle spawn model name

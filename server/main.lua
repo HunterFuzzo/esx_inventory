@@ -559,3 +559,34 @@ AddEventHandler('az_inventory:removeItemAfterUse', function(itemName)
         end
     end
 end)
+
+local ammoMapping = {
+    ['AMMO_12']     = { count = 8,  label = "Calibre 12" },
+    ['AMMO_45']     = { count = 12, label = ".45 ACP" },
+    ['AMMO_50']     = { count = 5,  label = ".50 BMG" },
+    ['AMMO_556']    = { count = 30, label = "5.56mm" },
+    ['AMMO_762']    = { count = 30, label = "7.62mm" },
+    ['AMMO_ROCKET'] = { count = 1,  label = "Roquette" },
+}
+
+for ammoName, data in pairs(ammoMapping) do
+    ESX.RegisterUsableItem(ammoName, function(source)
+        -- On envoie l'ordre au client
+        TriggerClientEvent('az_inventory:useAmmo', source, ammoName, data.count, data.label)
+    end)
+end
+
+-- Event pour retirer l'item après utilisation réussie
+RegisterNetEvent('az_inventory:removeAmmoItem')
+AddEventHandler('az_inventory:removeAmmoItem', function(itemName)
+    local _source = source
+    local xPlayer = ESX.GetPlayerFromId(_source)
+
+    if xPlayer then
+        xPlayer.removeInventoryItem(itemName, 1)
+        print("DEBUG: Item " .. itemName .. " retiré de l'inventaire de " .. _source)
+        
+        -- AJOUTE CETTE LIGNE ICI pour rafraîchir l'affichage du joueur
+        SyncPlayerInventory(_source) 
+    end
+end)

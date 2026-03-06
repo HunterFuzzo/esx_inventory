@@ -44,6 +44,7 @@
         tooltipQty: $('#tooltip-qty'),
         playerName: $('#player-name'),
         playerId: $('#player-id'),
+        money: $('#player-money'),
     };
 
     // ─── Test Mode Detection ──────────────────────────────────
@@ -669,7 +670,7 @@
             state.bagItems = (data.inventory || []).filter(i => i && i.count > 0);
             state.containerItems = data.container || [];
             state.maxWeight = data.maxWeight;
-            state.containerMaxWeight = data.containerMaxWeight || 100.0;
+            state.containerMaxWeight = data.containerMaxWeight || 200.0;
 
             if (data.shortkeys && Array.isArray(data.shortkeys)) {
                 // Shortkeys are an array of strings (item names) or false/null
@@ -683,6 +684,9 @@
 
             if (data.playerName) dom.playerName.textContent = data.playerName;
             if (data.playerId) dom.playerId.textContent = 'ID: ' + data.playerId;
+            if (data.money !== undefined) {
+                dom.money.textContent = data.money.toLocaleString('en-US');
+            }
         }
 
         state.isOpen = true;
